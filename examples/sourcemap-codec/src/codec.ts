@@ -48,14 +48,19 @@ export function decode(mappings: string): SourceMapSegment[][] {
     } else if (cc === COMMA) {
       i++;
     } else {
-      // Inline VLQ decode #1: Generated column
-      result = 0; shift = 0;
-      do {
-        digit = B64_DECODE[mappings.charCodeAt(i++)];
-        result |= (digit & 0x1f) << shift;
-        shift += 5;
-      } while (digit & 0x20);
-      generatedColumn += result & 1 ? -(result >> 1) : result >> 1;
+      // Inline VLQ decode #1: Generated column (with single-char fast path)
+      digit = B64_DECODE[mappings.charCodeAt(i++)];
+      if (digit < 32) {
+        generatedColumn += digit & 1 ? -(digit >> 1) : digit >> 1;
+      } else {
+        result = digit & 0x1f; shift = 5;
+        do {
+          digit = B64_DECODE[mappings.charCodeAt(i++)];
+          result |= (digit & 0x1f) << shift;
+          shift += 5;
+        } while (digit & 0x20);
+        generatedColumn += result & 1 ? -(result >> 1) : result >> 1;
+      }
 
       if (i >= len) {
         line.push([generatedColumn] as unknown as SourceMapSegment);
@@ -68,31 +73,46 @@ export function decode(mappings: string): SourceMapSegment[][] {
       }
 
       // Inline VLQ decode #2: Source index
-      result = 0; shift = 0;
-      do {
-        digit = B64_DECODE[mappings.charCodeAt(i++)];
-        result |= (digit & 0x1f) << shift;
-        shift += 5;
-      } while (digit & 0x20);
-      sourceIndex += result & 1 ? -(result >> 1) : result >> 1;
+      digit = B64_DECODE[mappings.charCodeAt(i++)];
+      if (digit < 32) {
+        sourceIndex += digit & 1 ? -(digit >> 1) : digit >> 1;
+      } else {
+        result = digit & 0x1f; shift = 5;
+        do {
+          digit = B64_DECODE[mappings.charCodeAt(i++)];
+          result |= (digit & 0x1f) << shift;
+          shift += 5;
+        } while (digit & 0x20);
+        sourceIndex += result & 1 ? -(result >> 1) : result >> 1;
+      }
 
       // Inline VLQ decode #3: Original line
-      result = 0; shift = 0;
-      do {
-        digit = B64_DECODE[mappings.charCodeAt(i++)];
-        result |= (digit & 0x1f) << shift;
-        shift += 5;
-      } while (digit & 0x20);
-      originalLine += result & 1 ? -(result >> 1) : result >> 1;
+      digit = B64_DECODE[mappings.charCodeAt(i++)];
+      if (digit < 32) {
+        originalLine += digit & 1 ? -(digit >> 1) : digit >> 1;
+      } else {
+        result = digit & 0x1f; shift = 5;
+        do {
+          digit = B64_DECODE[mappings.charCodeAt(i++)];
+          result |= (digit & 0x1f) << shift;
+          shift += 5;
+        } while (digit & 0x20);
+        originalLine += result & 1 ? -(result >> 1) : result >> 1;
+      }
 
       // Inline VLQ decode #4: Original column
-      result = 0; shift = 0;
-      do {
-        digit = B64_DECODE[mappings.charCodeAt(i++)];
-        result |= (digit & 0x1f) << shift;
-        shift += 5;
-      } while (digit & 0x20);
-      originalColumn += result & 1 ? -(result >> 1) : result >> 1;
+      digit = B64_DECODE[mappings.charCodeAt(i++)];
+      if (digit < 32) {
+        originalColumn += digit & 1 ? -(digit >> 1) : digit >> 1;
+      } else {
+        result = digit & 0x1f; shift = 5;
+        do {
+          digit = B64_DECODE[mappings.charCodeAt(i++)];
+          result |= (digit & 0x1f) << shift;
+          shift += 5;
+        } while (digit & 0x20);
+        originalColumn += result & 1 ? -(result >> 1) : result >> 1;
+      }
 
       if (i >= len) {
         line.push([generatedColumn, sourceIndex, originalLine, originalColumn]);
@@ -105,13 +125,18 @@ export function decode(mappings: string): SourceMapSegment[][] {
       }
 
       // Inline VLQ decode #5: Name index
-      result = 0; shift = 0;
-      do {
-        digit = B64_DECODE[mappings.charCodeAt(i++)];
-        result |= (digit & 0x1f) << shift;
-        shift += 5;
-      } while (digit & 0x20);
-      nameIndex += result & 1 ? -(result >> 1) : result >> 1;
+      digit = B64_DECODE[mappings.charCodeAt(i++)];
+      if (digit < 32) {
+        nameIndex += digit & 1 ? -(digit >> 1) : digit >> 1;
+      } else {
+        result = digit & 0x1f; shift = 5;
+        do {
+          digit = B64_DECODE[mappings.charCodeAt(i++)];
+          result |= (digit & 0x1f) << shift;
+          shift += 5;
+        } while (digit & 0x20);
+        nameIndex += result & 1 ? -(result >> 1) : result >> 1;
+      }
 
       line.push([generatedColumn, sourceIndex, originalLine, originalColumn, nameIndex]);
     }
