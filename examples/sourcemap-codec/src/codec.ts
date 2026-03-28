@@ -116,6 +116,21 @@ function decodeVLQ(str: string, offset: number): void {
   vlqValue = result & 1 ? -(result >> 1) : result >> 1;
 }
 
+// Pre-compute VLQ strings for values -255..255 using a flat array
+const VLQ_CACHE_OFFSET = 255;
+const VLQ_CACHE: string[] = new Array(511);
+for (let v = -255; v <= 255; v++) {
+  let vlq = v < 0 ? ((-v) << 1) | 1 : v << 1;
+  let s = "";
+  do {
+    let d = vlq & 0x1f;
+    vlq >>>= 5;
+    if (vlq > 0) d |= 0x20;
+    s += B64_CHARS[d];
+  } while (vlq > 0);
+  VLQ_CACHE[v + VLQ_CACHE_OFFSET] = s;
+}
+
 export function encode(decoded: SourceMapSegment[][]): string {
   let result = "";
 
@@ -161,6 +176,8 @@ export function encode(decoded: SourceMapSegment[][]): string {
 }
 
 function encodeVLQ(value: number): string {
+  if (value >= -255 && value <= 255) return VLQ_CACHE[value + VLQ_CACHE_OFFSET];
+
   let vlq = value < 0 ? ((-value) << 1) | 1 : value << 1;
   let result = "";
 
