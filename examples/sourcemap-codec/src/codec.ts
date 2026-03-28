@@ -149,6 +149,8 @@ export function decode(mappings: string): SourceMapSegment[][] {
 // Pre-compute VLQ strings for values -1023..1023 using a flat array
 const VLQ_CACHE_OFFSET = 1023;
 const VLQ_CACHE: string[] = new Array(2047);
+// Also a comma-prefixed cache for segments that aren't first in line
+const VLQ_COMMA_CACHE: string[] = new Array(2047);
 for (let v = -1023; v <= 1023; v++) {
   let vlq = v < 0 ? ((-v) << 1) | 1 : v << 1;
   let s = "";
@@ -159,6 +161,7 @@ for (let v = -1023; v <= 1023; v++) {
     s += B64_CHARS[d];
   } while (vlq > 0);
   VLQ_CACHE[v + VLQ_CACHE_OFFSET] = s;
+  VLQ_COMMA_CACHE[v + VLQ_CACHE_OFFSET] = "," + s;
 }
 
 // Encode lookup table: digit (0-63) -> single-char string
@@ -185,16 +188,15 @@ export function encode(decoded: SourceMapSegment[][]): string {
     prevGeneratedColumn = 0;
 
     for (let j = 0; j < line.length; j++) {
-      if (j > 0) result += ",";
-
       const segment = line[j];
 
-      // Inline VLQ encode #1: generated column
+      // Inline VLQ encode #1: generated column (with comma prefix for j > 0)
       value = segment[0] - prevGeneratedColumn;
       prevGeneratedColumn = segment[0];
       if (value >= -1023 && value <= 1023) {
-        result += VLQ_CACHE[value + VLQ_CACHE_OFFSET];
+        result += j > 0 ? VLQ_COMMA_CACHE[value + VLQ_CACHE_OFFSET] : VLQ_CACHE[value + VLQ_CACHE_OFFSET];
       } else {
+        if (j > 0) result += ",";
         vlq = value < 0 ? ((-value) << 1) | 1 : value << 1;
         do { d = vlq & 0x1f; vlq >>>= 5; if (vlq > 0) d |= 0x20; result += B64_CHAR_TABLE[d]; } while (vlq > 0);
       }
