@@ -21,3 +21,4 @@ f55f53c	134.8	revert	pre-size lines array by counting semicolons (scan overhead 
 9ebd558	358.0	revert	encode with string[] parts and join (array push far slower than V8 cons-string +=)
 a40bb2a	153.1	revert	batch 4-5 VLQ cache lookups into single concat (added branching hurts JIT)
 5436a68	103.4	keep	branchless VLQ sign extension via XOR trick
+4a0830f	101.1	revert	VLQ_SINGLE direct charCode-to-delta lookup (marginal, added complexity for ~2ms)
