@@ -173,7 +173,11 @@ export function encode(decoded: SourceMapSegment[][]): string {
   let prevOriginalColumn = 0;
   let prevNameIndex = 0;
 
-  let value: number;
+  let v1: number;
+  let v2: number;
+  let v3: number;
+  let v4: number;
+  let v5: number;
   let vlq: number;
   let d: number;
 
@@ -186,58 +190,103 @@ export function encode(decoded: SourceMapSegment[][]): string {
     for (let j = 0; j < line.length; j++) {
       const segment = line[j];
 
-      // Inline VLQ encode #1: generated column (with comma prefix for j > 0)
-      value = segment[0] - prevGeneratedColumn;
-      prevGeneratedColumn = segment[0];
-      if (value >= -1023 && value <= 1023) {
-        result += j > 0 ? VLQ_COMMA_CACHE[value + VLQ_CACHE_OFFSET] : VLQ_CACHE[value + VLQ_CACHE_OFFSET];
-      } else {
-        if (j > 0) result += ",";
-        vlq = value < 0 ? ((-value) << 1) | 1 : value << 1;
-        do { d = vlq & 0x1f; vlq >>>= 5; if (vlq > 0) d |= 0x20; result += B64_CHAR_TABLE[d]; } while (vlq > 0);
-      }
-
       if (segment.length >= 4) {
-        // Inline VLQ encode #2: source index
-        value = segment[1] - prevSourceIndex;
+        v1 = segment[0] - prevGeneratedColumn;
+        prevGeneratedColumn = segment[0];
+        v2 = segment[1] - prevSourceIndex;
         prevSourceIndex = segment[1];
-        if (value >= -1023 && value <= 1023) {
-          result += VLQ_CACHE[value + VLQ_CACHE_OFFSET];
-        } else {
-          vlq = value < 0 ? ((-value) << 1) | 1 : value << 1;
-          do { d = vlq & 0x1f; vlq >>>= 5; if (vlq > 0) d |= 0x20; result += B64_CHAR_TABLE[d]; } while (vlq > 0);
-        }
-
-        // Inline VLQ encode #3: original line
-        value = segment[2] - prevOriginalLine;
+        v3 = segment[2] - prevOriginalLine;
         prevOriginalLine = segment[2];
-        if (value >= -1023 && value <= 1023) {
-          result += VLQ_CACHE[value + VLQ_CACHE_OFFSET];
-        } else {
-          vlq = value < 0 ? ((-value) << 1) | 1 : value << 1;
-          do { d = vlq & 0x1f; vlq >>>= 5; if (vlq > 0) d |= 0x20; result += B64_CHAR_TABLE[d]; } while (vlq > 0);
+        v4 = segment[3] - prevOriginalColumn;
+        prevOriginalColumn = segment[3];
+
+        // Fast path: all 4 values in cache range (very common)
+        if (v1 >= -1023 && v1 <= 1023 &&
+            v2 >= -1023 && v2 <= 1023 &&
+            v3 >= -1023 && v3 <= 1023 &&
+            v4 >= -1023 && v4 <= 1023) {
+
+          if (segment.length === 5) {
+            v5 = segment[4] - prevNameIndex;
+            prevNameIndex = segment[4];
+            if (v5 >= -1023 && v5 <= 1023) {
+              // Single concat for 5-field segment
+              result += (j > 0 ? VLQ_COMMA_CACHE[v1 + VLQ_CACHE_OFFSET] : VLQ_CACHE[v1 + VLQ_CACHE_OFFSET])
+                + VLQ_CACHE[v2 + VLQ_CACHE_OFFSET]
+                + VLQ_CACHE[v3 + VLQ_CACHE_OFFSET]
+                + VLQ_CACHE[v4 + VLQ_CACHE_OFFSET]
+                + VLQ_CACHE[v5 + VLQ_CACHE_OFFSET];
+              continue;
+            }
+            // v5 out of range: concat first 4, then encode v5 inline
+            result += (j > 0 ? VLQ_COMMA_CACHE[v1 + VLQ_CACHE_OFFSET] : VLQ_CACHE[v1 + VLQ_CACHE_OFFSET])
+              + VLQ_CACHE[v2 + VLQ_CACHE_OFFSET]
+              + VLQ_CACHE[v3 + VLQ_CACHE_OFFSET]
+              + VLQ_CACHE[v4 + VLQ_CACHE_OFFSET];
+            vlq = v5 < 0 ? ((-v5) << 1) | 1 : v5 << 1;
+            do { d = vlq & 0x1f; vlq >>>= 5; if (vlq > 0) d |= 0x20; result += B64_CHAR_TABLE[d]; } while (vlq > 0);
+            continue;
+          }
+
+          // Single concat for 4-field segment
+          result += (j > 0 ? VLQ_COMMA_CACHE[v1 + VLQ_CACHE_OFFSET] : VLQ_CACHE[v1 + VLQ_CACHE_OFFSET])
+            + VLQ_CACHE[v2 + VLQ_CACHE_OFFSET]
+            + VLQ_CACHE[v3 + VLQ_CACHE_OFFSET]
+            + VLQ_CACHE[v4 + VLQ_CACHE_OFFSET];
+          continue;
         }
 
-        // Inline VLQ encode #4: original column
-        value = segment[3] - prevOriginalColumn;
-        prevOriginalColumn = segment[3];
-        if (value >= -1023 && value <= 1023) {
-          result += VLQ_CACHE[value + VLQ_CACHE_OFFSET];
+        // Slow path: some values out of cache range
+        // Field 1 (generated column)
+        if (v1 >= -1023 && v1 <= 1023) {
+          result += j > 0 ? VLQ_COMMA_CACHE[v1 + VLQ_CACHE_OFFSET] : VLQ_CACHE[v1 + VLQ_CACHE_OFFSET];
         } else {
-          vlq = value < 0 ? ((-value) << 1) | 1 : value << 1;
+          if (j > 0) result += ",";
+          vlq = v1 < 0 ? ((-v1) << 1) | 1 : v1 << 1;
+          do { d = vlq & 0x1f; vlq >>>= 5; if (vlq > 0) d |= 0x20; result += B64_CHAR_TABLE[d]; } while (vlq > 0);
+        }
+        // Field 2 (source index)
+        if (v2 >= -1023 && v2 <= 1023) {
+          result += VLQ_CACHE[v2 + VLQ_CACHE_OFFSET];
+        } else {
+          vlq = v2 < 0 ? ((-v2) << 1) | 1 : v2 << 1;
+          do { d = vlq & 0x1f; vlq >>>= 5; if (vlq > 0) d |= 0x20; result += B64_CHAR_TABLE[d]; } while (vlq > 0);
+        }
+        // Field 3 (original line)
+        if (v3 >= -1023 && v3 <= 1023) {
+          result += VLQ_CACHE[v3 + VLQ_CACHE_OFFSET];
+        } else {
+          vlq = v3 < 0 ? ((-v3) << 1) | 1 : v3 << 1;
+          do { d = vlq & 0x1f; vlq >>>= 5; if (vlq > 0) d |= 0x20; result += B64_CHAR_TABLE[d]; } while (vlq > 0);
+        }
+        // Field 4 (original column)
+        if (v4 >= -1023 && v4 <= 1023) {
+          result += VLQ_CACHE[v4 + VLQ_CACHE_OFFSET];
+        } else {
+          vlq = v4 < 0 ? ((-v4) << 1) | 1 : v4 << 1;
           do { d = vlq & 0x1f; vlq >>>= 5; if (vlq > 0) d |= 0x20; result += B64_CHAR_TABLE[d]; } while (vlq > 0);
         }
 
         if (segment.length === 5) {
-          // Inline VLQ encode #5: name index
-          value = segment[4] - prevNameIndex;
+          v5 = segment[4] - prevNameIndex;
           prevNameIndex = segment[4];
-          if (value >= -1023 && value <= 1023) {
-            result += VLQ_CACHE[value + VLQ_CACHE_OFFSET];
+          if (v5 >= -1023 && v5 <= 1023) {
+            result += VLQ_CACHE[v5 + VLQ_CACHE_OFFSET];
           } else {
-            vlq = value < 0 ? ((-value) << 1) | 1 : value << 1;
+            vlq = v5 < 0 ? ((-v5) << 1) | 1 : v5 << 1;
             do { d = vlq & 0x1f; vlq >>>= 5; if (vlq > 0) d |= 0x20; result += B64_CHAR_TABLE[d]; } while (vlq > 0);
           }
+        }
+      } else {
+        // 1-field segment (generated column only)
+        v1 = segment[0] - prevGeneratedColumn;
+        prevGeneratedColumn = segment[0];
+        if (v1 >= -1023 && v1 <= 1023) {
+          result += j > 0 ? VLQ_COMMA_CACHE[v1 + VLQ_CACHE_OFFSET] : VLQ_CACHE[v1 + VLQ_CACHE_OFFSET];
+        } else {
+          if (j > 0) result += ",";
+          vlq = v1 < 0 ? ((-v1) << 1) | 1 : v1 << 1;
+          do { d = vlq & 0x1f; vlq >>>= 5; if (vlq > 0) d |= 0x20; result += B64_CHAR_TABLE[d]; } while (vlq > 0);
         }
       }
     }
