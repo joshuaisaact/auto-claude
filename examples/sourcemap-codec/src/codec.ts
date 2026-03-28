@@ -33,6 +33,10 @@ export function decode(mappings: string): SourceMapSegment[][] {
 
   const len = mappings.length;
   let i = 0;
+  let result: number;
+  let shift: number;
+  let digit: number;
+
   while (i < len) {
     const cc = mappings.charCodeAt(i);
 
@@ -44,12 +48,14 @@ export function decode(mappings: string): SourceMapSegment[][] {
     } else if (cc === COMMA) {
       i++;
     } else {
-      // Decode a segment (1, 4, or 5 VLQ values)
-
-      // 1. Generated column
-      decodeVLQ(mappings, i);
-      generatedColumn += vlqValue;
-      i = vlqPos;
+      // Inline VLQ decode #1: Generated column
+      result = 0; shift = 0;
+      do {
+        digit = B64_DECODE[mappings.charCodeAt(i++)];
+        result |= (digit & 0x1f) << shift;
+        shift += 5;
+      } while (digit & 0x20);
+      generatedColumn += result & 1 ? -(result >> 1) : result >> 1;
 
       if (i >= len) {
         line.push([generatedColumn] as unknown as SourceMapSegment);
@@ -61,20 +67,32 @@ export function decode(mappings: string): SourceMapSegment[][] {
         continue;
       }
 
-      // 2. Source index
-      decodeVLQ(mappings, i);
-      sourceIndex += vlqValue;
-      i = vlqPos;
+      // Inline VLQ decode #2: Source index
+      result = 0; shift = 0;
+      do {
+        digit = B64_DECODE[mappings.charCodeAt(i++)];
+        result |= (digit & 0x1f) << shift;
+        shift += 5;
+      } while (digit & 0x20);
+      sourceIndex += result & 1 ? -(result >> 1) : result >> 1;
 
-      // 3. Original line
-      decodeVLQ(mappings, i);
-      originalLine += vlqValue;
-      i = vlqPos;
+      // Inline VLQ decode #3: Original line
+      result = 0; shift = 0;
+      do {
+        digit = B64_DECODE[mappings.charCodeAt(i++)];
+        result |= (digit & 0x1f) << shift;
+        shift += 5;
+      } while (digit & 0x20);
+      originalLine += result & 1 ? -(result >> 1) : result >> 1;
 
-      // 4. Original column
-      decodeVLQ(mappings, i);
-      originalColumn += vlqValue;
-      i = vlqPos;
+      // Inline VLQ decode #4: Original column
+      result = 0; shift = 0;
+      do {
+        digit = B64_DECODE[mappings.charCodeAt(i++)];
+        result |= (digit & 0x1f) << shift;
+        shift += 5;
+      } while (digit & 0x20);
+      originalColumn += result & 1 ? -(result >> 1) : result >> 1;
 
       if (i >= len) {
         line.push([generatedColumn, sourceIndex, originalLine, originalColumn]);
@@ -86,34 +104,21 @@ export function decode(mappings: string): SourceMapSegment[][] {
         continue;
       }
 
-      // 5. Name index
-      decodeVLQ(mappings, i);
-      nameIndex += vlqValue;
-      i = vlqPos;
+      // Inline VLQ decode #5: Name index
+      result = 0; shift = 0;
+      do {
+        digit = B64_DECODE[mappings.charCodeAt(i++)];
+        result |= (digit & 0x1f) << shift;
+        shift += 5;
+      } while (digit & 0x20);
+      nameIndex += result & 1 ? -(result >> 1) : result >> 1;
+
       line.push([generatedColumn, sourceIndex, originalLine, originalColumn, nameIndex]);
     }
   }
 
   lines.push(line);
   return lines;
-}
-
-function decodeVLQ(str: string, offset: number): void {
-  let result = 0;
-  let shift = 0;
-
-  while (true) {
-    const digit = B64_DECODE[str.charCodeAt(offset++)];
-    if (digit === 255) throw new Error(`Invalid base64 char: ${str[offset - 1]}`);
-
-    result |= (digit & 0x1f) << shift;
-    shift += 5;
-
-    if ((digit & 0x20) === 0) break;
-  }
-
-  vlqPos = offset;
-  vlqValue = result & 1 ? -(result >> 1) : result >> 1;
 }
 
 // Pre-compute VLQ strings for values -255..255 using a flat array
