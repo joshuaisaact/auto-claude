@@ -1,0 +1,23 @@
+commit	metric_ms	status	description
+915667f	334.2	keep	baseline
+7249b33	272.6	keep	Uint8Array lookup table for base64 decode (replaces indexOf)
+fb21e9b	281.7	revert	buffer-based encode with Uint8Array (slower due to reduce + buffer overhead)
+25f2f36	219.1	keep	eliminate tuple alloc in decodeVLQ + charCodeAt in decode loop
+dd68b43	242.2	revert	VLQ cache with Map for -255..255 (Map lookup overhead too high)
+f615ead	157.0	keep	VLQ encode cache using flat Array for -255..255
+e3bb7e6	145.1	keep	inline decodeVLQ into decode() to eliminate function call overhead
+62804c7	144.5	keep	inline encodeVLQ into encode() to eliminate function call overhead
+f19d902	142.0	keep	fast-path single-char VLQ decode (digit < 32)
+e44c20b	199.4	revert	encode per-line strings with join (huge regression on single-line cases)
+11d23dd	140.4	keep	widen VLQ encode cache to -1023..1023
+5d745ee	199.9	revert	Uint8Array buffer encode (String.fromCharCode conversion too slow)
+f462028	146.7	revert	unify separator detection via B64_DECODE table (encode regressed)
+4cc1c1d	165.8	revert	single concat per segment (slower than individual +=)
+18fcbaf	117.4	keep	comma-prefixed VLQ cache eliminates separate comma concat
+477208a	123.9	revert	2-char VLQ decode fast path (too much code bloat for JIT)
+19819d8	130.7	revert	de-inline VLQ decode to helper function (decode regressed 72->86ms)
+23feff7	116.3	keep	remove unused vlqValue/vlqPos module-level variables
+f55f53c	134.8	revert	pre-size lines array by counting semicolons (scan overhead > array growth savings)
+9ebd558	358.0	revert	encode with string[] parts and join (array push far slower than V8 cons-string +=)
+a40bb2a	153.1	revert	batch 4-5 VLQ cache lookups into single concat (added branching hurts JIT)
+5436a68	103.4	keep	branchless VLQ sign extension via XOR trick
