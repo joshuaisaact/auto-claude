@@ -1,0 +1,27 @@
+#!/bin/bash
+# Autoresearch benchmark harness
+# Usage: ./bench.sh [binary] [runs]
+set -e
+
+BINARY="${1:?Usage: ./bench.sh <binary> [runs]}"
+RUNS="${2:-5}"
+CPU="${BENCH_CPU:-0}"
+
+PERF_EVENTS="cpu_core/cycles/u,cpu_core/instructions/u,cpu_core/L1-dcache-load-misses/u,cpu_core/L1-dcache-loads/u,cpu_core/cache-references/u,cpu_core/branch-misses/u"
+
+# Flush cache between runs
+flush_cache() {
+    # Allocate and touch 64MB to evict L3
+    dd if=/dev/urandom of=/dev/null bs=1M count=64 2>/dev/null || true
+}
+
+echo "=== Benchmark: $(basename $BINARY) ==="
+echo "=== $RUNS runs, pinned to CPU $CPU ==="
+echo ""
+
+for i in $(seq 1 $RUNS); do
+    flush_cache
+    echo "--- Run $i ---"
+    taskset -c $CPU perf stat -e $PERF_EVENTS "$BINARY" 2>&1 | grep -E "cycles|instructions|cache|branch|seconds"
+    echo ""
+done

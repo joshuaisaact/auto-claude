@@ -1,0 +1,11 @@
+# Research Results
+
+Machine: {{MACHINE}}
+Target: {{TARGET}}
+Baseline: {{BASELINE_METRICS}}
+
+---
+
+## Experiment log
+
+<!-- Experiments are appended here by the agent -->

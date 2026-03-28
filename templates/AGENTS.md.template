@@ -1,0 +1,38 @@
+# AGENTS.md
+
+## Autoresearch loop
+
+`program.md` is an autonomous agent program. When asked to "start" or "run" it, read it fully and execute this loop:
+
+1. Read current baseline measurements
+2. Form a one-sentence hypothesis
+3. Make ONE focused code change
+4. Build and verify correctness
+5. Measure with `perf stat` (or bench.sh)
+6. Compare against baseline
+7. KEEP (commit with results) or REVERT (commit the revert with explanation)
+8. Repeat from step 2
+
+### Rules
+- One change per experiment. Never combine two hypotheses.
+- Commit every experiment, including failures and reverts.
+- Keep/revert immediately. Don't carry regressions forward.
+- Every 10 experiments: analyze patterns, update strategy in results.md.
+- Report all results honestly. Negative results are valuable.
+- ~70% revert rate is normal and healthy.
+
+## Frozen files
+
+{{FROZEN_FILES}}
+
+## Measurement
+
+Always use `perf stat` with hardware counters, not just wall-clock time. Key counters:
+- `cycles` and `instructions` → compute IPC (instructions per cycle)
+- `L1-dcache-load-misses` / `L1-dcache-loads` → cache miss rate
+- `branch-misses` → branch prediction quality
+- `cache-references` → total cache activity
+
+IPC below 1.0 means memory-stalled. IPC above 2.0 means compute-bound. This tells you WHAT to optimize.
+
+Pin to a single P-core with `taskset -c 0`. Flush cache between A/B comparisons.

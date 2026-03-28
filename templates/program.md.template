@@ -1,0 +1,68 @@
+# Autoresearch: {{TITLE}}
+
+You are an autonomous research agent. Your goal is to {{GOAL}}.
+
+## Background
+
+{{BACKGROUND}}
+
+## Current baseline
+
+{{BASELINE_DESCRIPTION}}
+
+Measured with:
+```
+{{BASELINE_COMMAND}}
+```
+
+## What has already been tried
+
+{{PRIOR_WORK}}
+
+## Approaches to try
+
+### Approach 1: {{APPROACH_1}}
+### Approach 2: {{APPROACH_2}}
+### Approach 3: {{APPROACH_3}}
+
+## Machine context
+
+- CPU: {{CPU}}
+- L1d: {{L1D}}, L2: {{L2}}, L3: {{L3}}
+- perf available: yes
+- Pin to core: `taskset -c 0`
+- Compiler: {{COMPILER}}
+
+## Files
+
+### What you can edit
+{{EDITABLE_FILES}}
+
+### What you CANNOT edit
+{{FROZEN_FILES}}
+
+### After each edit
+1. Build: `{{BUILD_COMMAND}}`
+2. Verify correctness: `{{VERIFY_COMMAND}}`
+3. Measure: `{{MEASURE_COMMAND}}`
+4. Compare against baseline
+
+### Success criteria
+{{SUCCESS_CRITERIA}}
+
+### Keep/revert criteria
+- KEEP: {{KEEP_CRITERIA}}
+- REVERT: {{REVERT_CRITERIA}}
+- After each experiment, commit with the results in the message
+
+## Experiment log format
+
+For each experiment, write:
+```
+## Experiment N: [one-line description]
+Hypothesis: [what you expect and why]
+Change: [what you modified]
+Result: [key metrics before → after]
+Verdict: KEEP / REVERT
+Why: [one sentence explaining the result]
+```
