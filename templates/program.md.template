@@ -1,68 +1,78 @@
-# Autoresearch: {{TITLE}}
+# autoresearch
 
-You are an autonomous research agent. Your goal is to {{GOAL}}.
+This is an experiment to have Claude do its own research.
 
-## Background
+## Setup
 
-{{BACKGROUND}}
+To set up a new experiment, work with the user to:
 
-## Current baseline
+1. **Agree on a run tag**: propose a tag based on today's date (e.g. `mar28`). The branch `autoresearch/<tag>` must not already exist.
+2. **Create the branch**: `git checkout -b autoresearch/<tag>`
+3. **Read the in-scope files**: Read these for full context:
+   - `README.md` -- repository context
+   - {{FROZEN_FILES}} -- do not modify
+   - {{EDITABLE_FILES}} -- the file(s) you modify
+4. **Initialize results.tsv**: Create with just the header row. The baseline will be recorded after the first run.
+5. **Confirm and go**.
 
-{{BASELINE_DESCRIPTION}}
+## Experimentation
 
-Measured with:
+Each experiment runs {{EXPERIMENT_DESCRIPTION}}.
+
+**What you CAN do:**
+- Modify {{EDITABLE_FILES}}. Everything is fair game: {{WHAT_IS_FAIR_GAME}}.
+
+**What you CANNOT do:**
+- Modify {{FROZEN_FILES}}.
+- {{OTHER_CONSTRAINTS}}
+
+**The goal is simple: {{GOAL}}.** {{GOAL_CONTEXT}}.
+
+**Simplicity criterion**: All else being equal, simpler is better. A small improvement that adds ugly complexity is not worth it. Removing something and getting equal or better results is a great outcome. When evaluating whether to keep a change, weigh the complexity cost against the improvement magnitude.
+
+**The first run**: Always establish the baseline first by running the code as-is.
+
+## Output format
+
+The experiment command:
 ```
-{{BASELINE_COMMAND}}
+{{RUN_COMMAND}}
 ```
 
-## What has already been tried
-
-{{PRIOR_WORK}}
-
-## Approaches to try
-
-### Approach 1: {{APPROACH_1}}
-### Approach 2: {{APPROACH_2}}
-### Approach 3: {{APPROACH_3}}
-
-## Machine context
-
-- CPU: {{CPU}}
-- L1d: {{L1D}}, L2: {{L2}}, L3: {{L3}}
-- perf available: yes
-- Pin to core: `taskset -c 0`
-- Compiler: {{COMPILER}}
-
-## Files
-
-### What you can edit
-{{EDITABLE_FILES}}
-
-### What you CANNOT edit
-{{FROZEN_FILES}}
-
-### After each edit
-1. Build: `{{BUILD_COMMAND}}`
-2. Verify correctness: `{{VERIFY_COMMAND}}`
-3. Measure: `{{MEASURE_COMMAND}}`
-4. Compare against baseline
-
-### Success criteria
-{{SUCCESS_CRITERIA}}
-
-### Keep/revert criteria
-- KEEP: {{KEEP_CRITERIA}}
-- REVERT: {{REVERT_CRITERIA}}
-- After each experiment, commit with the results in the message
-
-## Experiment log format
-
-For each experiment, write:
+Extract the key metric:
 ```
-## Experiment N: [one-line description]
-Hypothesis: [what you expect and why]
-Change: [what you modified]
-Result: [key metrics before → after]
-Verdict: KEEP / REVERT
-Why: [one sentence explaining the result]
+{{EXTRACT_METRIC_COMMAND}}
 ```
+
+## Logging results
+
+Log to `results.tsv` (tab-separated). Header and columns:
+
+```
+commit	{{METRIC_NAME}}	status	description
+```
+
+- git commit hash (short, 7 chars)
+- {{METRIC_NAME}} achieved -- use 0 for crashes
+- status: `keep`, `discard`, or `crash`
+- short description of what this experiment tried
+
+## The experiment loop
+
+LOOP FOREVER:
+
+1. Look at the current git state
+2. Edit {{EDITABLE_FILES}} with an experimental idea
+3. git commit
+4. Run the experiment: `{{RUN_COMMAND}}`
+5. Read the results: `{{EXTRACT_METRIC_COMMAND}}`
+6. If empty/crashed: `tail -n 50 run.log`, attempt a fix or skip
+7. Record in results.tsv (do NOT commit this file)
+8. If {{METRIC_NAME}} improved: keep the commit
+9. If worse or equal: git reset back
+
+**Timeout**: If a run exceeds {{TIMEOUT}}, kill it and treat as failure.
+
+**Crashes**: If it's a dumb bug, fix and re-run. If the idea is fundamentally broken, skip it, log "crash", move on.
+
+**NEVER STOP**: Once the loop begins, do NOT pause to ask the human. The human might be asleep. You are autonomous. If you run out of ideas, think harder -- re-read the code, try combining previous near-misses, try more radical changes. The loop runs until the human interrupts you.

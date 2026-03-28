@@ -1,36 +1,59 @@
 # auto-claude
 
-Autonomous performance research harness for Claude Code. Extracted from [elastic-hash](https://github.com/joshuaisaact/elastic-hash), where ~150 experiments across 3 languages discovered that hashbrown's ctrl byte array is an L1 bottleneck and batched prefetch yields 28% cycle reduction.
+Autonomous research harness for Claude Code. Give an agent a problem, a file to edit, and a way to measure, then let it run.
 
-## What this is
+Inspired by [Karpathy's autoresearch](https://github.com/karpathy/autoresearch). Same idea, generalized beyond ML training: the agent modifies code, runs an experiment, checks if the result improved, keeps or discards, and repeats. You come back to a log of experiments and (hopefully) a better solution.
 
-A reusable pattern for Claude Code agents to autonomously run performance experiments: hypothesize, change, measure, keep or revert, commit, repeat. The agent makes one focused change at a time, measures with hardware counters, and commits every result (including failures).
+## How it works
 
-## Usage
+Three things matter:
+
+- **`program.md`** -- instructions for the agent. What to optimize, how to measure, what files to edit. Written by the human.
+- **The editable file(s)** -- whatever the agent is iterating on. Could be anything: a hash table, a compiler pass, a prompt template, a config file.
+- **`results.tsv`** -- log of every experiment. The agent appends to this after each run.
+
+You point Claude at `program.md` and let it go:
 
 ```
-claude "use the autoresearch skill to set up a performance research project targeting [your hot path]"
+claude "read program.md and start experimenting"
 ```
 
-The skill scaffolds:
-- `program.md` -- research plan with hypothesis, success criteria, keep/revert rules
-- `bench.sh` -- measurement script with perf stat, CPU pinning, cache flushing
-- `results.md` -- accumulating findings log
-- `AGENTS.md` -- instructions for the autonomous research loop
+## The loop
 
-Then launch the agent:
 ```
-claude "read program.md and execute the research loop autonomously"
+LOOP FOREVER:
+1. Read the current state
+2. Come up with an idea (one focused change)
+3. Edit the code
+4. git commit
+5. Run the experiment
+6. Record results in results.tsv
+7. If improved: keep the commit, advance
+8. If worse: git reset back
+9. Repeat
 ```
 
-## The pattern
+The agent runs until you stop it. If each experiment takes ~2 minutes, that's ~30/hour, ~240 overnight.
 
-Learned from 8 rounds of hash table optimization:
+## Writing a program.md
 
-1. **One change at a time.** Never combine two hypotheses in one experiment.
-2. **Measure with hardware counters.** Wall-clock time lies. `perf stat` shows cycles, IPC, cache misses, branch mispredictions. These tell you WHY something is fast or slow.
-3. **Commit every experiment.** Including failures. The revert history is as valuable as the keep history.
-4. **Keep/revert immediately.** Don't carry forward a regression hoping the next change will fix it.
-5. **Revert rate of ~70% is healthy.** Most hypotheses are wrong. That's fine.
-6. **Every ~10 experiments, step back.** Analyze patterns, update strategy, document insights.
-7. **Report honestly.** Especially negative results. "This didn't work because..." is more useful than only showing wins.
+A program.md needs:
+
+1. **What to optimize** -- the target, the metric, what "better" means
+2. **What to edit** -- which files are fair game, which are frozen
+3. **How to measure** -- the exact command to run and how to extract the result
+4. **Constraints** -- what the agent cannot do (break the API, add dependencies, etc.)
+
+See `templates/program.md.template` for the skeleton. See `examples/` for concrete examples.
+
+## Design choices
+
+- **Single metric.** The agent needs one number to optimize. If you have multiple metrics, define a composite or pick the most important one.
+- **Fixed budget per experiment.** Each run should take roughly the same time regardless of what the agent changes. This makes results comparable.
+- **Commit everything.** Including failures. The git log IS the experiment log.
+- **Keep or discard immediately.** Don't carry regressions forward hoping the next change will fix them.
+- **Never stop.** The agent runs autonomously until interrupted. If it runs out of ideas, it should think harder, not ask.
+
+## License
+
+MIT
