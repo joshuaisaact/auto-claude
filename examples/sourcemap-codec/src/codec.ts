@@ -14,6 +14,13 @@ for (let i = 0; i < 64; i++) {
   B64_DECODE[B64_CHARS.charCodeAt(i)] = i;
 }
 
+// Module-level state for decodeVLQ to avoid tuple allocation
+let vlqValue = 0;
+let vlqPos = 0;
+
+const SEMICOLON = 59; // ';'.charCodeAt(0)
+const COMMA = 44;     // ','.charCodeAt(0)
+
 export function decode(mappings: string): SourceMapSegment[][] {
   const lines: SourceMapSegment[][] = [];
   let line: SourceMapSegment[] = [];
@@ -24,53 +31,65 @@ export function decode(mappings: string): SourceMapSegment[][] {
   let originalColumn = 0;
   let nameIndex = 0;
 
+  const len = mappings.length;
   let i = 0;
-  while (i < mappings.length) {
-    const ch = mappings.charAt(i);
+  while (i < len) {
+    const cc = mappings.charCodeAt(i);
 
-    if (ch === ";") {
+    if (cc === SEMICOLON) {
       lines.push(line);
       line = [];
       generatedColumn = 0;
       i++;
-    } else if (ch === ",") {
+    } else if (cc === COMMA) {
       i++;
     } else {
       // Decode a segment (1, 4, or 5 VLQ values)
-      const segStart = i;
-
-      let value: number;
 
       // 1. Generated column
-      [value, i] = decodeVLQ(mappings, i);
-      generatedColumn += value;
+      decodeVLQ(mappings, i);
+      generatedColumn += vlqValue;
+      i = vlqPos;
 
-      if (i >= mappings.length || mappings.charAt(i) === "," || mappings.charAt(i) === ";") {
-        // 1-value segment (generated column only) — rare but valid
+      if (i >= len) {
+        line.push([generatedColumn] as unknown as SourceMapSegment);
+        continue;
+      }
+      const cc1 = mappings.charCodeAt(i);
+      if (cc1 === COMMA || cc1 === SEMICOLON) {
         line.push([generatedColumn] as unknown as SourceMapSegment);
         continue;
       }
 
       // 2. Source index
-      [value, i] = decodeVLQ(mappings, i);
-      sourceIndex += value;
+      decodeVLQ(mappings, i);
+      sourceIndex += vlqValue;
+      i = vlqPos;
 
       // 3. Original line
-      [value, i] = decodeVLQ(mappings, i);
-      originalLine += value;
+      decodeVLQ(mappings, i);
+      originalLine += vlqValue;
+      i = vlqPos;
 
       // 4. Original column
-      [value, i] = decodeVLQ(mappings, i);
-      originalColumn += value;
+      decodeVLQ(mappings, i);
+      originalColumn += vlqValue;
+      i = vlqPos;
 
-      if (i >= mappings.length || mappings.charAt(i) === "," || mappings.charAt(i) === ";") {
+      if (i >= len) {
+        line.push([generatedColumn, sourceIndex, originalLine, originalColumn]);
+        continue;
+      }
+      const cc4 = mappings.charCodeAt(i);
+      if (cc4 === COMMA || cc4 === SEMICOLON) {
         line.push([generatedColumn, sourceIndex, originalLine, originalColumn]);
         continue;
       }
 
       // 5. Name index
-      [value, i] = decodeVLQ(mappings, i);
-      nameIndex += value;
+      decodeVLQ(mappings, i);
+      nameIndex += vlqValue;
+      i = vlqPos;
       line.push([generatedColumn, sourceIndex, originalLine, originalColumn, nameIndex]);
     }
   }
@@ -79,7 +98,7 @@ export function decode(mappings: string): SourceMapSegment[][] {
   return lines;
 }
 
-function decodeVLQ(str: string, offset: number): [number, number] {
+function decodeVLQ(str: string, offset: number): void {
   let result = 0;
   let shift = 0;
 
@@ -93,11 +112,8 @@ function decodeVLQ(str: string, offset: number): [number, number] {
     if ((digit & 0x20) === 0) break;
   }
 
-  // Bit 0 is the sign
-  if (result & 1) {
-    return [-(result >> 1), offset];
-  }
-  return [result >> 1, offset];
+  vlqPos = offset;
+  vlqValue = result & 1 ? -(result >> 1) : result >> 1;
 }
 
 export function encode(decoded: SourceMapSegment[][]): string {
