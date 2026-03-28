@@ -27,14 +27,17 @@ export function decode(mappings: string): SourceMapSegment[][] {
   let originalColumn = 0;
   let nameIndex = 0;
 
+  // Append a sentinel so we never need to check i >= len in the hot path
+  const input = mappings + ";";
   const len = mappings.length;
   let i = 0;
   let result: number;
   let shift: number;
   let digit: number;
+  let cc: number;
 
   while (i < len) {
-    const cc = mappings.charCodeAt(i);
+    cc = input.charCodeAt(i);
 
     if (cc === SEMICOLON) {
       lines.push(line);
@@ -44,38 +47,35 @@ export function decode(mappings: string): SourceMapSegment[][] {
     } else if (cc === COMMA) {
       i++;
     } else {
-      // Inline VLQ decode #1: Generated column (with single-char fast path)
-      digit = B64_DECODE[mappings.charCodeAt(i++)];
+      // Inline VLQ decode #1: Generated column
+      digit = B64_DECODE[input.charCodeAt(i++)];
       if (digit < 32) {
         generatedColumn += ((digit >> 1) ^ -(digit & 1)) + (digit & 1);
       } else {
         result = digit & 0x1f; shift = 5;
         do {
-          digit = B64_DECODE[mappings.charCodeAt(i++)];
+          digit = B64_DECODE[input.charCodeAt(i++)];
           result |= (digit & 0x1f) << shift;
           shift += 5;
         } while (digit & 0x20);
         generatedColumn += ((result >> 1) ^ -(result & 1)) + (result & 1);
       }
 
-      if (i >= len) {
-        line.push([generatedColumn] as unknown as SourceMapSegment);
-        continue;
-      }
-      const cc1 = mappings.charCodeAt(i);
-      if (cc1 === COMMA || cc1 === SEMICOLON) {
+      // Check next char — sentinel guarantees no bounds check needed
+      cc = input.charCodeAt(i);
+      if (cc === COMMA || cc === SEMICOLON) {
         line.push([generatedColumn] as unknown as SourceMapSegment);
         continue;
       }
 
       // Inline VLQ decode #2: Source index
-      digit = B64_DECODE[mappings.charCodeAt(i++)];
+      digit = B64_DECODE[input.charCodeAt(i++)];
       if (digit < 32) {
         sourceIndex += ((digit >> 1) ^ -(digit & 1)) + (digit & 1);
       } else {
         result = digit & 0x1f; shift = 5;
         do {
-          digit = B64_DECODE[mappings.charCodeAt(i++)];
+          digit = B64_DECODE[input.charCodeAt(i++)];
           result |= (digit & 0x1f) << shift;
           shift += 5;
         } while (digit & 0x20);
@@ -83,13 +83,13 @@ export function decode(mappings: string): SourceMapSegment[][] {
       }
 
       // Inline VLQ decode #3: Original line
-      digit = B64_DECODE[mappings.charCodeAt(i++)];
+      digit = B64_DECODE[input.charCodeAt(i++)];
       if (digit < 32) {
         originalLine += ((digit >> 1) ^ -(digit & 1)) + (digit & 1);
       } else {
         result = digit & 0x1f; shift = 5;
         do {
-          digit = B64_DECODE[mappings.charCodeAt(i++)];
+          digit = B64_DECODE[input.charCodeAt(i++)];
           result |= (digit & 0x1f) << shift;
           shift += 5;
         } while (digit & 0x20);
@@ -97,37 +97,34 @@ export function decode(mappings: string): SourceMapSegment[][] {
       }
 
       // Inline VLQ decode #4: Original column
-      digit = B64_DECODE[mappings.charCodeAt(i++)];
+      digit = B64_DECODE[input.charCodeAt(i++)];
       if (digit < 32) {
         originalColumn += ((digit >> 1) ^ -(digit & 1)) + (digit & 1);
       } else {
         result = digit & 0x1f; shift = 5;
         do {
-          digit = B64_DECODE[mappings.charCodeAt(i++)];
+          digit = B64_DECODE[input.charCodeAt(i++)];
           result |= (digit & 0x1f) << shift;
           shift += 5;
         } while (digit & 0x20);
         originalColumn += ((result >> 1) ^ -(result & 1)) + (result & 1);
       }
 
-      if (i >= len) {
-        line.push([generatedColumn, sourceIndex, originalLine, originalColumn]);
-        continue;
-      }
-      const cc4 = mappings.charCodeAt(i);
-      if (cc4 === COMMA || cc4 === SEMICOLON) {
+      // Check next char
+      cc = input.charCodeAt(i);
+      if (cc === COMMA || cc === SEMICOLON) {
         line.push([generatedColumn, sourceIndex, originalLine, originalColumn]);
         continue;
       }
 
       // Inline VLQ decode #5: Name index
-      digit = B64_DECODE[mappings.charCodeAt(i++)];
+      digit = B64_DECODE[input.charCodeAt(i++)];
       if (digit < 32) {
         nameIndex += ((digit >> 1) ^ -(digit & 1)) + (digit & 1);
       } else {
         result = digit & 0x1f; shift = 5;
         do {
-          digit = B64_DECODE[mappings.charCodeAt(i++)];
+          digit = B64_DECODE[input.charCodeAt(i++)];
           result |= (digit & 0x1f) << shift;
           shift += 5;
         } while (digit & 0x20);
