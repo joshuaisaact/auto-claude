@@ -14,10 +14,6 @@ for (let i = 0; i < 64; i++) {
   B64_DECODE[B64_CHARS.charCodeAt(i)] = i;
 }
 
-// Module-level state for decodeVLQ to avoid tuple allocation
-let vlqValue = 0;
-let vlqPos = 0;
-
 const SEMICOLON = 59; // ';'.charCodeAt(0)
 const COMMA = 44;     // ','.charCodeAt(0)
 
