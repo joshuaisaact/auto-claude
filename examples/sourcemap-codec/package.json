@@ -1,0 +1,18 @@
+{
+  "name": "sourcemap-codec",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "verify": "tsx verify.ts",
+    "bench": "tsx bench.ts",
+    "eval": "./eval.sh"
+  },
+  "devDependencies": {
+    "tsx": "^4.19.0",
+    "typescript": "^5.7.0"
+  },
+  "dependencies": {
+    "@jridgewell/sourcemap-codec": "^1.5.5",
+    "react-dom": "^19.2.4"
+  }
+}
