@@ -136,6 +136,10 @@ for (let v = -255; v <= 255; v++) {
   VLQ_CACHE[v + VLQ_CACHE_OFFSET] = s;
 }
 
+// Encode lookup table: digit (0-63) -> single-char string
+const B64_CHAR_TABLE: string[] = new Array(64);
+for (let i = 0; i < 64; i++) B64_CHAR_TABLE[i] = B64_CHARS[i];
+
 export function encode(decoded: SourceMapSegment[][]): string {
   let result = "";
 
@@ -144,6 +148,10 @@ export function encode(decoded: SourceMapSegment[][]): string {
   let prevOriginalLine = 0;
   let prevOriginalColumn = 0;
   let prevNameIndex = 0;
+
+  let value: number;
+  let vlq: number;
+  let d: number;
 
   for (let i = 0; i < decoded.length; i++) {
     if (i > 0) result += ";";
@@ -156,42 +164,61 @@ export function encode(decoded: SourceMapSegment[][]): string {
 
       const segment = line[j];
 
-      result += encodeVLQ(segment[0] - prevGeneratedColumn);
+      // Inline VLQ encode #1: generated column
+      value = segment[0] - prevGeneratedColumn;
       prevGeneratedColumn = segment[0];
+      if (value >= -255 && value <= 255) {
+        result += VLQ_CACHE[value + VLQ_CACHE_OFFSET];
+      } else {
+        vlq = value < 0 ? ((-value) << 1) | 1 : value << 1;
+        do { d = vlq & 0x1f; vlq >>>= 5; if (vlq > 0) d |= 0x20; result += B64_CHAR_TABLE[d]; } while (vlq > 0);
+      }
 
       if (segment.length >= 4) {
-        result += encodeVLQ(segment[1] - prevSourceIndex);
+        // Inline VLQ encode #2: source index
+        value = segment[1] - prevSourceIndex;
         prevSourceIndex = segment[1];
+        if (value >= -255 && value <= 255) {
+          result += VLQ_CACHE[value + VLQ_CACHE_OFFSET];
+        } else {
+          vlq = value < 0 ? ((-value) << 1) | 1 : value << 1;
+          do { d = vlq & 0x1f; vlq >>>= 5; if (vlq > 0) d |= 0x20; result += B64_CHAR_TABLE[d]; } while (vlq > 0);
+        }
 
-        result += encodeVLQ(segment[2] - prevOriginalLine);
+        // Inline VLQ encode #3: original line
+        value = segment[2] - prevOriginalLine;
         prevOriginalLine = segment[2];
+        if (value >= -255 && value <= 255) {
+          result += VLQ_CACHE[value + VLQ_CACHE_OFFSET];
+        } else {
+          vlq = value < 0 ? ((-value) << 1) | 1 : value << 1;
+          do { d = vlq & 0x1f; vlq >>>= 5; if (vlq > 0) d |= 0x20; result += B64_CHAR_TABLE[d]; } while (vlq > 0);
+        }
 
-        result += encodeVLQ(segment[3] - prevOriginalColumn);
+        // Inline VLQ encode #4: original column
+        value = segment[3] - prevOriginalColumn;
         prevOriginalColumn = segment[3];
+        if (value >= -255 && value <= 255) {
+          result += VLQ_CACHE[value + VLQ_CACHE_OFFSET];
+        } else {
+          vlq = value < 0 ? ((-value) << 1) | 1 : value << 1;
+          do { d = vlq & 0x1f; vlq >>>= 5; if (vlq > 0) d |= 0x20; result += B64_CHAR_TABLE[d]; } while (vlq > 0);
+        }
 
         if (segment.length === 5) {
-          result += encodeVLQ(segment[4] - prevNameIndex);
+          // Inline VLQ encode #5: name index
+          value = segment[4] - prevNameIndex;
           prevNameIndex = segment[4];
+          if (value >= -255 && value <= 255) {
+            result += VLQ_CACHE[value + VLQ_CACHE_OFFSET];
+          } else {
+            vlq = value < 0 ? ((-value) << 1) | 1 : value << 1;
+            do { d = vlq & 0x1f; vlq >>>= 5; if (vlq > 0) d |= 0x20; result += B64_CHAR_TABLE[d]; } while (vlq > 0);
+          }
         }
       }
     }
   }
-
-  return result;
-}
-
-function encodeVLQ(value: number): string {
-  if (value >= -255 && value <= 255) return VLQ_CACHE[value + VLQ_CACHE_OFFSET];
-
-  let vlq = value < 0 ? ((-value) << 1) | 1 : value << 1;
-  let result = "";
-
-  do {
-    let digit = vlq & 0x1f;
-    vlq >>>= 5;
-    if (vlq > 0) digit |= 0x20;
-    result += B64_CHARS[digit];
-  } while (vlq > 0);
 
   return result;
 }
