@@ -1,55 +1,101 @@
-// LRU cache with doubly-linked list + Map for O(1) get/set/evict.
+// LRU cache with pre-allocated node pool and free list.
+// Nodes are reused instead of being GC'd.
 
 interface Node<K, V> {
   key: K;
   value: V;
-  prev: Node<K, V> | null;
-  next: Node<K, V> | null;
+  prev: Node<K, V>;
+  next: Node<K, V>;
 }
 
 export class LRUCache<K, V> {
   private capacity: number;
   private map: Map<K, Node<K, V>>;
-  // Sentinel nodes eliminate null checks in list operations
-  private head: Node<K, V>; // head.next = MRU
-  private tail: Node<K, V>; // tail.prev = LRU
+  private head: Node<K, V>; // sentinel
+  private tail: Node<K, V>; // sentinel
+  private freeHead: Node<K, V> | null;
 
   constructor(capacity: number) {
     this.capacity = capacity;
     this.map = new Map();
-    // Create sentinel nodes
-    this.head = { key: undefined as K, value: undefined as V, prev: null, next: null };
-    this.tail = { key: undefined as K, value: undefined as V, prev: null, next: null };
-    this.head.next = this.tail;
-    this.tail.prev = this.head;
+
+    // Sentinel nodes
+    const head = { key: undefined!, value: undefined!, prev: undefined!, next: undefined! } as Node<K, V>;
+    const tail = { key: undefined!, value: undefined!, prev: undefined!, next: undefined! } as Node<K, V>;
+    head.next = tail;
+    head.prev = head;
+    tail.prev = head;
+    tail.next = tail;
+    this.head = head;
+    this.tail = tail;
+
+    // Pre-allocate node pool
+    let free: Node<K, V> | null = null;
+    for (let i = 0; i < capacity; i++) {
+      const node = { key: undefined!, value: undefined!, prev: undefined!, next: undefined! } as Node<K, V>;
+      node.next = free!;
+      free = node;
+    }
+    this.freeHead = free;
   }
 
   get(key: K): V | undefined {
     const node = this.map.get(key);
     if (node === undefined) return undefined;
-    // Move to front (most recent)
-    this._remove(node);
-    this._addToFront(node);
+    // Move to front
+    const prev = node.prev;
+    const next = node.next;
+    prev.next = next;
+    next.prev = prev;
+
+    const headNext = this.head.next;
+    node.next = headNext;
+    node.prev = this.head;
+    headNext.prev = node;
+    this.head.next = node;
     return node.value;
   }
 
   set(key: K, value: V): void {
     let node = this.map.get(key);
     if (node !== undefined) {
-      // Update existing
       node.value = value;
-      this._remove(node);
-      this._addToFront(node);
+      // Move to front
+      const prev = node.prev;
+      const next = node.next;
+      prev.next = next;
+      next.prev = prev;
+
+      const headNext = this.head.next;
+      node.next = headNext;
+      node.prev = this.head;
+      headNext.prev = node;
+      this.head.next = node;
     } else {
-      // New entry
       if (this.map.size >= this.capacity) {
-        // Evict LRU (tail.prev)
-        const lru = this.tail.prev!;
-        this._remove(lru);
+        // Evict LRU and recycle the node
+        const lru = this.tail.prev;
+        lru.prev.next = this.tail;
+        this.tail.prev = lru.prev;
         this.map.delete(lru.key);
+
+        // Reuse evicted node
+        lru.key = key;
+        lru.value = value;
+        node = lru;
+      } else {
+        // Get from free list
+        node = this.freeHead!;
+        this.freeHead = node.next as Node<K, V> | null;
+        node.key = key;
+        node.value = value;
       }
-      node = { key, value, prev: null, next: null };
-      this._addToFront(node);
+
+      const headNext = this.head.next;
+      node.next = headNext;
+      node.prev = this.head;
+      headNext.prev = node;
+      this.head.next = node;
       this.map.set(key, node);
     }
   }
@@ -60,17 +106,5 @@ export class LRUCache<K, V> {
 
   get size(): number {
     return this.map.size;
-  }
-
-  private _remove(node: Node<K, V>): void {
-    node.prev!.next = node.next;
-    node.next!.prev = node.prev;
-  }
-
-  private _addToFront(node: Node<K, V>): void {
-    node.next = this.head.next;
-    node.prev = this.head;
-    this.head.next!.prev = node;
-    this.head.next = node;
   }
 }
