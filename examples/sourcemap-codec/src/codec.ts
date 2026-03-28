@@ -146,10 +146,10 @@ export function decode(mappings: string): SourceMapSegment[][] {
   return lines;
 }
 
-// Pre-compute VLQ strings for values -255..255 using a flat array
-const VLQ_CACHE_OFFSET = 255;
-const VLQ_CACHE: string[] = new Array(511);
-for (let v = -255; v <= 255; v++) {
+// Pre-compute VLQ strings for values -1023..1023 using a flat array
+const VLQ_CACHE_OFFSET = 1023;
+const VLQ_CACHE: string[] = new Array(2047);
+for (let v = -1023; v <= 1023; v++) {
   let vlq = v < 0 ? ((-v) << 1) | 1 : v << 1;
   let s = "";
   do {
@@ -192,7 +192,7 @@ export function encode(decoded: SourceMapSegment[][]): string {
       // Inline VLQ encode #1: generated column
       value = segment[0] - prevGeneratedColumn;
       prevGeneratedColumn = segment[0];
-      if (value >= -255 && value <= 255) {
+      if (value >= -1023 && value <= 1023) {
         result += VLQ_CACHE[value + VLQ_CACHE_OFFSET];
       } else {
         vlq = value < 0 ? ((-value) << 1) | 1 : value << 1;
@@ -203,7 +203,7 @@ export function encode(decoded: SourceMapSegment[][]): string {
         // Inline VLQ encode #2: source index
         value = segment[1] - prevSourceIndex;
         prevSourceIndex = segment[1];
-        if (value >= -255 && value <= 255) {
+        if (value >= -1023 && value <= 1023) {
           result += VLQ_CACHE[value + VLQ_CACHE_OFFSET];
         } else {
           vlq = value < 0 ? ((-value) << 1) | 1 : value << 1;
@@ -213,7 +213,7 @@ export function encode(decoded: SourceMapSegment[][]): string {
         // Inline VLQ encode #3: original line
         value = segment[2] - prevOriginalLine;
         prevOriginalLine = segment[2];
-        if (value >= -255 && value <= 255) {
+        if (value >= -1023 && value <= 1023) {
           result += VLQ_CACHE[value + VLQ_CACHE_OFFSET];
         } else {
           vlq = value < 0 ? ((-value) << 1) | 1 : value << 1;
@@ -223,7 +223,7 @@ export function encode(decoded: SourceMapSegment[][]): string {
         // Inline VLQ encode #4: original column
         value = segment[3] - prevOriginalColumn;
         prevOriginalColumn = segment[3];
-        if (value >= -255 && value <= 255) {
+        if (value >= -1023 && value <= 1023) {
           result += VLQ_CACHE[value + VLQ_CACHE_OFFSET];
         } else {
           vlq = value < 0 ? ((-value) << 1) | 1 : value << 1;
@@ -234,7 +234,7 @@ export function encode(decoded: SourceMapSegment[][]): string {
           // Inline VLQ encode #5: name index
           value = segment[4] - prevNameIndex;
           prevNameIndex = segment[4];
-          if (value >= -255 && value <= 255) {
+          if (value >= -1023 && value <= 1023) {
             result += VLQ_CACHE[value + VLQ_CACHE_OFFSET];
           } else {
             vlq = value < 0 ? ((-value) << 1) | 1 : value << 1;
