@@ -95,6 +95,85 @@ export class LRUCache<K, V> {
     return this.map.has(key);
   }
 
+  delete(key: K): boolean {
+    const node = this.map.get(key);
+    if (node === undefined) return false;
+    // Remove from list
+    node.prev.next = node.next;
+    node.next.prev = node.prev;
+    this.map.delete(key);
+    // Return to free list
+    node.key = 0 as unknown as K;
+    node.value = 0 as unknown as V;
+    node.next = this.freeHead;
+    this.freeHead = node;
+    return true;
+  }
+
+  peek(key: K): V | undefined {
+    const node = this.map.get(key);
+    return node === undefined ? undefined : node.value;
+  }
+
+  clear(): void {
+    this.map.clear();
+    const s = this.sentinel;
+    // Rebuild free list from all nodes in the linked list
+    let node = s.next;
+    let free: Node<K, V> = s;
+    while (node !== s) {
+      const next = node.next;
+      node.key = 0 as unknown as K;
+      node.value = 0 as unknown as V;
+      node.next = free;
+      free = node;
+      node = next;
+    }
+    s.prev = s;
+    s.next = s;
+    this.freeHead = free;
+  }
+
+  forEach(callback: (value: V, key: K, cache: this) => void): void {
+    const s = this.sentinel;
+    let node = s.next;
+    while (node !== s) {
+      callback(node.value, node.key, this);
+      node = node.next;
+    }
+  }
+
+  *keys(): IterableIterator<K> {
+    const s = this.sentinel;
+    let node = s.next;
+    while (node !== s) {
+      yield node.key;
+      node = node.next;
+    }
+  }
+
+  *values(): IterableIterator<V> {
+    const s = this.sentinel;
+    let node = s.next;
+    while (node !== s) {
+      yield node.value;
+      node = node.next;
+    }
+  }
+
+  *entries(): IterableIterator<[K, V]> {
+    const s = this.sentinel;
+    let node = s.next;
+    while (node !== s) {
+      yield [node.key, node.value];
+      node = node.next;
+    }
+  }
+
+  [Symbol.iterator](): IterableIterator<[K, V]> {
+    return this.entries();
+  }
+
   get size(): number {
     return this.map.size;
   }

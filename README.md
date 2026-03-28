@@ -44,7 +44,10 @@ A program.md needs:
 3. **How to measure** -- the exact command to run and how to extract the result
 4. **Constraints** -- what the agent cannot do (break the API, add dependencies, etc.)
 
-See `templates/program.md.template` for the skeleton. See `examples/` for concrete examples.
+See `templates/program.md.template` for the skeleton. See `examples/` for concrete examples:
+
+- **[LRU cache optimization](examples/lru-cache/)** -- Agent started from a naive LRU cache and beat mnemonist (the performance-focused LRU library) by 26% in 25 experiments. [Full results.](examples/lru-cache/RESULTS.md)
+- **[Perf optimization with hardware counters](examples/perf-optimization.md)** -- Template for optimizing hot paths using `perf stat`.
 
 ## Design choices
 
