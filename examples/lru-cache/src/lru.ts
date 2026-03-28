@@ -1,5 +1,6 @@
 // LRU cache with circular doubly-linked list and pre-allocated pool.
-// Single sentinel node, Map pre-sized.
+// Nodes initialized with 0 (smi) to avoid undefined->number type transition.
+// Sentinel-terminated free list (no null union type).
 
 interface Node<K, V> {
   key: K;
@@ -11,25 +12,23 @@ interface Node<K, V> {
 export class LRUCache<K, V> {
   private capacity: number;
   private map: Map<K, Node<K, V>>;
-  private sentinel: Node<K, V>; // sentinel.next = MRU, sentinel.prev = LRU
-  private freeHead: Node<K, V> | null;
+  private sentinel: Node<K, V>;
+  private freeHead: Node<K, V>;
 
   constructor(capacity: number) {
     this.capacity = capacity;
-    // Pre-size hint: doesn't exist for Map, but let's create one
     this.map = new Map();
 
-    // Single sentinel for circular list
-    const sentinel = { key: undefined!, value: undefined!, prev: undefined!, next: undefined! } as Node<K, V>;
+    // Initialize sentinel with 0 values (smi) for consistent hidden class
+    const sentinel = { key: 0 as any as K, value: 0 as any as V, prev: null! as Node<K, V>, next: null! as Node<K, V> };
     sentinel.prev = sentinel;
     sentinel.next = sentinel;
     this.sentinel = sentinel;
 
-    // Pre-allocate node pool
-    let free: Node<K, V> | null = null;
+    // Pre-allocate pool — all nodes start with same shape (key:0, value:0, prev:node, next:node)
+    let free: Node<K, V> = sentinel;
     for (let i = 0; i < capacity; i++) {
-      const node = { key: undefined!, value: undefined!, prev: undefined!, next: undefined! } as Node<K, V>;
-      node.next = free!;
+      const node: Node<K, V> = { key: 0 as any as K, value: 0 as any as V, prev: sentinel, next: free };
       free = node;
     }
     this.freeHead = free;
@@ -77,8 +76,8 @@ export class LRUCache<K, V> {
         lru.value = value;
         node = lru;
       } else {
-        node = this.freeHead!;
-        this.freeHead = node.next as Node<K, V> | null;
+        node = this.freeHead;
+        this.freeHead = node.next;
         node.key = key;
         node.value = value;
       }
