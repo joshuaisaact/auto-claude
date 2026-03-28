@@ -1,5 +1,5 @@
-// LRU cache with pre-allocated node pool and free list.
-// Nodes are reused instead of being GC'd.
+// LRU cache with circular doubly-linked list and pre-allocated pool.
+// Single sentinel node, Map pre-sized.
 
 interface Node<K, V> {
   key: K;
@@ -11,23 +11,19 @@ interface Node<K, V> {
 export class LRUCache<K, V> {
   private capacity: number;
   private map: Map<K, Node<K, V>>;
-  private head: Node<K, V>; // sentinel
-  private tail: Node<K, V>; // sentinel
+  private sentinel: Node<K, V>; // sentinel.next = MRU, sentinel.prev = LRU
   private freeHead: Node<K, V> | null;
 
   constructor(capacity: number) {
     this.capacity = capacity;
+    // Pre-size hint: doesn't exist for Map, but let's create one
     this.map = new Map();
 
-    // Sentinel nodes
-    const head = { key: undefined!, value: undefined!, prev: undefined!, next: undefined! } as Node<K, V>;
-    const tail = { key: undefined!, value: undefined!, prev: undefined!, next: undefined! } as Node<K, V>;
-    head.next = tail;
-    head.prev = head;
-    tail.prev = head;
-    tail.next = tail;
-    this.head = head;
-    this.tail = tail;
+    // Single sentinel for circular list
+    const sentinel = { key: undefined!, value: undefined!, prev: undefined!, next: undefined! } as Node<K, V>;
+    sentinel.prev = sentinel;
+    sentinel.next = sentinel;
+    this.sentinel = sentinel;
 
     // Pre-allocate node pool
     let free: Node<K, V> | null = null;
@@ -42,17 +38,16 @@ export class LRUCache<K, V> {
   get(key: K): V | undefined {
     const node = this.map.get(key);
     if (node === undefined) return undefined;
-    // Move to front
-    const prev = node.prev;
-    const next = node.next;
-    prev.next = next;
-    next.prev = prev;
-
-    const headNext = this.head.next;
-    node.next = headNext;
-    node.prev = this.head;
-    headNext.prev = node;
-    this.head.next = node;
+    // Remove from current position
+    node.prev.next = node.next;
+    node.next.prev = node.prev;
+    // Insert after sentinel (MRU position)
+    const s = this.sentinel;
+    const sn = s.next;
+    node.next = sn;
+    node.prev = s;
+    sn.prev = node;
+    s.next = node;
     return node.value;
   }
 
@@ -61,41 +56,38 @@ export class LRUCache<K, V> {
     if (node !== undefined) {
       node.value = value;
       // Move to front
-      const prev = node.prev;
-      const next = node.next;
-      prev.next = next;
-      next.prev = prev;
-
-      const headNext = this.head.next;
-      node.next = headNext;
-      node.prev = this.head;
-      headNext.prev = node;
-      this.head.next = node;
+      node.prev.next = node.next;
+      node.next.prev = node.prev;
+      const s = this.sentinel;
+      const sn = s.next;
+      node.next = sn;
+      node.prev = s;
+      sn.prev = node;
+      s.next = node;
     } else {
+      const s = this.sentinel;
       if (this.map.size >= this.capacity) {
-        // Evict LRU and recycle the node
-        const lru = this.tail.prev;
-        lru.prev.next = this.tail;
-        this.tail.prev = lru.prev;
+        // Evict LRU (sentinel.prev)
+        const lru = s.prev;
+        lru.prev.next = s;
+        s.prev = lru.prev;
         this.map.delete(lru.key);
-
-        // Reuse evicted node
+        // Reuse node
         lru.key = key;
         lru.value = value;
         node = lru;
       } else {
-        // Get from free list
         node = this.freeHead!;
         this.freeHead = node.next as Node<K, V> | null;
         node.key = key;
         node.value = value;
       }
-
-      const headNext = this.head.next;
-      node.next = headNext;
-      node.prev = this.head;
-      headNext.prev = node;
-      this.head.next = node;
+      // Insert after sentinel
+      const sn = s.next;
+      node.next = sn;
+      node.prev = s;
+      sn.prev = node;
+      s.next = node;
       this.map.set(key, node);
     }
   }
