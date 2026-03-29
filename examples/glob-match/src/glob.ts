@@ -153,6 +153,54 @@ function tryFastPath(pattern: string): Matcher | null {
     }
   }
 
+  // Pattern: prefix/**/literal.* (e.g. src/**/index.*)
+  {
+    const m = matchPrefixGlobstarLiteralDotStar(pattern);
+    if (m !== null) {
+      const { prefix, literal } = m;
+      const prefixSlash = prefix + "/";
+      const literalDot = literal + ".";
+      return (path: string) => {
+        if (!path.startsWith(prefixSlash)) return false;
+        // Find the last / in path to get basename
+        const lastSlash = path.lastIndexOf("/");
+        const basename = path.substring(lastSlash + 1);
+        // basename must start with literal + "."
+        if (!basename.startsWith(literalDot)) return false;
+        // basename must have content after the dot (at least one char)
+        if (basename.length <= literalDot.length) return false;
+        // The extension part must not contain /
+        // (it won't since we extracted from lastSlash)
+        // No hidden segments in the path after prefix
+        const rest = path.substring(prefix.length + 1);
+        if (hasHiddenSegment(rest)) return false;
+        return true;
+      };
+    }
+  }
+
+  // Pattern: **/*[charclass]*suffix (e.g. **/*[A-Z]*.tsx)
+  {
+    const m = matchGlobstarCharClassSuffix(pattern);
+    if (m !== null) {
+      const { charTest, suffix } = m;
+      return (path: string) => {
+        if (!path.endsWith(suffix)) return false;
+        if (hasHiddenSegment(path)) return false;
+        // Find the basename
+        const lastSlash = path.lastIndexOf("/");
+        const basenameStart = lastSlash + 1;
+        // basename must not start with dot (already checked by hasHiddenSegment)
+        // Need to find at least one char matching charTest in the basename (before suffix)
+        const searchEnd = path.length - suffix.length;
+        for (let i = basenameStart; i < searchEnd; i++) {
+          if (charTest(path.charCodeAt(i))) return true;
+        }
+        return false;
+      };
+    }
+  }
+
   return null;
 }
 
@@ -240,6 +288,93 @@ function matchDirQuestionSuffix(pattern: string): { prefix: string; qCount: numb
     if (c === 42 || c === 63 || c === 91 || c === 123 || c === 92) return null;
   }
   return { prefix, qCount, suffix };
+}
+
+// Match pattern like prefix/**/literal.* (e.g. src/**/index.*)
+function matchPrefixGlobstarLiteralDotStar(pattern: string): { prefix: string; literal: string } | null {
+  const dstarIdx = pattern.indexOf("/**/");
+  if (dstarIdx < 0) return null;
+  const prefix = pattern.substring(0, dstarIdx);
+  for (let i = 0; i < prefix.length; i++) {
+    const c = prefix.charCodeAt(i);
+    if (c === 42 || c === 63 || c === 91 || c === 123 || c === 92) return null;
+  }
+  const after = pattern.substring(dstarIdx + 4);
+  // after must be "literal.*" (literal + dot + star, no other globs)
+  if (!after.endsWith(".*")) return null;
+  const literal = after.substring(0, after.length - 2);
+  // literal must be purely literal
+  for (let i = 0; i < literal.length; i++) {
+    const c = literal.charCodeAt(i);
+    if (c === 42 || c === 63 || c === 91 || c === 123 || c === 92 || c === 47) return null;
+  }
+  return { prefix, literal };
+}
+
+// Match pattern like **/*[A-Z]*.tsx
+function matchGlobstarCharClassSuffix(pattern: string): { charTest: (code: number) => boolean; suffix: string } | null {
+  // Must start with **/*
+  if (pattern.length < 7) return null;
+  if (pattern.charCodeAt(0) !== 42 || pattern.charCodeAt(1) !== 42 ||
+      pattern.charCodeAt(2) !== 47 || pattern.charCodeAt(3) !== 42) return null;
+  // Next must be [
+  if (pattern.charCodeAt(4) !== 91) return null;
+  // Find closing ]
+  const closeIdx = pattern.indexOf("]", 5);
+  if (closeIdx < 0) return null;
+  // After ] must be * + literal suffix
+  if (pattern.charCodeAt(closeIdx + 1) !== 42) return null;
+  const suffix = pattern.substring(closeIdx + 2);
+  // suffix must be literal
+  for (let i = 0; i < suffix.length; i++) {
+    const c = suffix.charCodeAt(i);
+    if (c === 42 || c === 63 || c === 91 || c === 123 || c === 92) return null;
+  }
+  // Parse the character class
+  const classBody = pattern.substring(5, closeIdx);
+  const charTest = parseCharClass(classBody);
+  if (!charTest) return null;
+  return { charTest, suffix };
+}
+
+// Parse a character class body like "A-Z" or "abc" into a test function
+function parseCharClass(body: string): ((code: number) => boolean) | null {
+  const negated = body.startsWith("!");
+  const chars = negated ? body.substring(1) : body;
+  // Build ranges and individual chars
+  const ranges: [number, number][] = [];
+  const singles: number[] = [];
+  let i = 0;
+  while (i < chars.length) {
+    if (i + 2 < chars.length && chars.charCodeAt(i + 1) === 45) {
+      // Range like A-Z
+      ranges.push([chars.charCodeAt(i), chars.charCodeAt(i + 2)]);
+      i += 3;
+    } else {
+      singles.push(chars.charCodeAt(i));
+      i++;
+    }
+  }
+  if (negated) {
+    return (code: number) => {
+      for (let j = 0; j < ranges.length; j++) {
+        if (code >= ranges[j][0] && code <= ranges[j][1]) return false;
+      }
+      for (let j = 0; j < singles.length; j++) {
+        if (code === singles[j]) return false;
+      }
+      return true;
+    };
+  }
+  return (code: number) => {
+    for (let j = 0; j < ranges.length; j++) {
+      if (code >= ranges[j][0] && code <= ranges[j][1]) return true;
+    }
+    for (let j = 0; j < singles.length; j++) {
+      if (code === singles[j]) return true;
+    }
+    return false;
+  };
 }
 
 // --- Brace expansion for fast paths ---
