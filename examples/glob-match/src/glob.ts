@@ -15,20 +15,17 @@ export function compile(pattern: string): Matcher {
   if (expanded) {
     // Check if all expanded patterns are **/*.suffix
     {
-      const suffixStrs: string[] = [];
+      const suffixes: string[] = [];
       let ok = true;
       for (const p of expanded) {
         const gs = matchGlobstarSlashStarSuffix(p);
-        if (gs !== null) { suffixStrs.push(gs); } else { ok = false; break; }
+        if (gs !== null) { suffixes.push(gs); } else { ok = false; break; }
       }
       if (ok) {
-        const suffixCodes = suffixStrs.map(makeSuffixCodes);
+        // Build a single function that checks all suffixes without loop overhead
+        const suffixCheck = buildMultiSuffixCheck(suffixes);
         return (path: string) => {
-          let anySuffix = false;
-          for (let i = 0; i < suffixCodes.length; i++) {
-            if (endsWithCodes(path, suffixCodes[i])) { anySuffix = true; break; }
-          }
-          if (!anySuffix) return false;
+          if (!suffixCheck(path)) return false;
           return !hasHiddenSegment(path);
         };
       }
@@ -36,7 +33,7 @@ export function compile(pattern: string): Matcher {
 
     // Check if all expanded patterns are prefix/**/*.suffix with same prefix
     {
-      const suffixStrs: string[] = [];
+      const suffixes: string[] = [];
       let ok = true;
       let commonPrefix = "";
       for (const p of expanded) {
@@ -44,20 +41,16 @@ export function compile(pattern: string): Matcher {
         if (pgs !== null) {
           if (commonPrefix === "") commonPrefix = pgs.prefix;
           else if (commonPrefix !== pgs.prefix) { ok = false; break; }
-          suffixStrs.push(pgs.suffix);
+          suffixes.push(pgs.suffix);
         } else { ok = false; break; }
       }
       if (ok && commonPrefix !== "") {
         const prefixSlash = commonPrefix + "/";
         const checkFrom = commonPrefix.length + 1;
-        const suffixCodes = suffixStrs.map(makeSuffixCodes);
+        const suffixCheck = buildMultiSuffixCheck(suffixes);
         return (path: string) => {
           if (!path.startsWith(prefixSlash)) return false;
-          let anySuffix = false;
-          for (let i = 0; i < suffixCodes.length; i++) {
-            if (endsWithCodes(path, suffixCodes[i])) { anySuffix = true; break; }
-          }
-          if (!anySuffix) return false;
+          if (!suffixCheck(path)) return false;
           return !hasHiddenSegmentFrom(path, checkFrom);
         };
       }
@@ -421,6 +414,28 @@ function parseCharClass(body: string): ((code: number) => boolean) | null {
     }
     for (let j = 0; j < singles.length; j++) {
       if (code === singles[j]) return true;
+    }
+    return false;
+  };
+}
+
+// Build an efficient multi-suffix check. Uses the last char to discriminate.
+function buildMultiSuffixCheck(suffixes: string[]): (path: string) => boolean {
+  if (suffixes.length === 1) {
+    const s = suffixes[0];
+    const codes = makeSuffixCodes(s);
+    return (path: string) => endsWithCodes(path, codes);
+  }
+  if (suffixes.length === 2) {
+    const c0 = makeSuffixCodes(suffixes[0]);
+    const c1 = makeSuffixCodes(suffixes[1]);
+    return (path: string) => endsWithCodes(path, c0) || endsWithCodes(path, c1);
+  }
+  // General case: group by last char code for fast discrimination
+  const codes = suffixes.map(makeSuffixCodes);
+  return (path: string) => {
+    for (let i = 0; i < codes.length; i++) {
+      if (endsWithCodes(path, codes[i])) return true;
     }
     return false;
   };
