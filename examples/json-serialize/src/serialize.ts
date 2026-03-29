@@ -31,35 +31,33 @@ function serializeString(val: unknown): string {
   if (!NEEDS_ESCAPE.test(str)) {
     return '"' + str + '"';
   }
-  // Inline escape loop to avoid extra function call + string concat
+  // Inline escape loop using test() + lastIndex (avoids match object)
   const re = ESCAPE_RE_G;
   re.lastIndex = 0;
   let result = '"';
   let last = 0;
-  let match;
-  while ((match = re.exec(str)) !== null) {
-    const idx = match.index;
+  while (re.test(str)) {
+    const idx = re.lastIndex - 1;
     if (idx > last) result += str.slice(last, idx);
     result += ESCAPE_TABLE[str.charCodeAt(idx)];
-    last = idx + 1;
+    last = re.lastIndex;
   }
   if (last < str.length) result += str.slice(last);
   return result + '"';
 }
 
 // escapeString returns the escaped string WITHOUT quotes.
-// Uses regex.exec() to jump between escape positions (native C++ scan).
+// Uses regex.test() + lastIndex to avoid match object allocation.
 function escapeString(str: string): string {
   const re = ESCAPE_RE_G;
   re.lastIndex = 0;
   let result = '';
   let last = 0;
-  let match;
-  while ((match = re.exec(str)) !== null) {
-    const idx = match.index;
+  while (re.test(str)) {
+    const idx = re.lastIndex - 1;
     if (idx > last) result += str.slice(last, idx);
     result += ESCAPE_TABLE[str.charCodeAt(idx)];
-    last = idx + 1;
+    last = re.lastIndex;
   }
   if (last === 0) return str;
   if (last < str.length) result += str.slice(last);
