@@ -210,39 +210,50 @@ function buildObjectSerializerCodegen(schema: Schema): Serializer {
     }
   }
 
-  let code = "return function(obj) {\nvar r = '{';\nvar first = true;\nvar v;\n";
-
-  for (let i = 0; i < keys.length; i++) {
-    const key = keys[i];
+  // Helper to get the expression for a given key
+  function makeExpr(keyIdx: number): { prefix: string; commaPrefix: string; expr: string } {
+    const key = keys[keyIdx];
     const jsonKey = JSON.stringify(key);
     const isString = props[key].type === "string";
 
-    // For string properties, merge the key prefix with the opening quote of the value
-    // So instead of '"key":' + '"value"', we get '"key":"' + value + '"'
-    let prefix: string;
-    let commaPrefix: string;
-    let expr: string;
-
     if (isString) {
-      prefix = jsonKey + ':"';
-      commaPrefix = "," + jsonKey + ':"';
-      // Inline: if no escape needed, use raw string; else escape
-      expr = `($$re.test(v) ? $$esc(v) : v) + '"'`;
+      return {
+        prefix: jsonKey + ':"',
+        commaPrefix: "," + jsonKey + ':"',
+        expr: `($$re.test(v) ? $$esc(v) : v) + '"'`,
+      };
     } else {
-      prefix = jsonKey + ":";
-      commaPrefix = "," + prefix;
+      const pfx = jsonKey + ":";
       const inline = getInlineExpr(props[key], "v");
-      expr = inline !== null ? inline : `s${serializerMap.get(i)}(v)`;
+      const expr = inline !== null ? inline : `s${serializerMap.get(keyIdx)}(v)`;
+      return { prefix: pfx, commaPrefix: "," + pfx, expr };
     }
-
-    code += `v = obj[${jsonKey}];\n`;
-    code += `if (v !== undefined) {\n`;
-    code += `  if (first) { r += '${prefix}' + ${expr}; first = false; }\n`;
-    code += `  else { r += '${commaPrefix}' + ${expr}; }\n`;
-    code += `}\n`;
   }
 
-  code += "return r + '}';\n};";
+  let code = "return function(obj) {\nvar v;\n";
+
+  // Generate: first property uses '{prefix', rest use ',prefix'
+  // Handle the first property specially (no comma, no first flag)
+  const first = makeExpr(0);
+  code += `v = obj[${JSON.stringify(keys[0])}];\n`;
+  if (keys.length === 1) {
+    // Only one property
+    code += `if (v !== undefined) return '{' + '${first.prefix}' + ${first.expr} + '}';\n`;
+    code += `return '{}';\n`;
+  } else {
+    code += `var r;\n`;
+    code += `if (v !== undefined) r = '{${first.prefix}' + ${first.expr};\n`;
+    code += `else r = '{';\n`;
+
+    for (let i = 1; i < keys.length; i++) {
+      const e = makeExpr(i);
+      code += `v = obj[${JSON.stringify(keys[i])}];\n`;
+      code += `if (v !== undefined) r += (r.length === 1 ? '${e.prefix}' : '${e.commaPrefix}') + ${e.expr};\n`;
+    }
+    code += `return r + '}';\n`;
+  }
+
+  code += "};";
 
   const fn = new Function(...paramNames, code)(...childSerializers);
   return fn;
