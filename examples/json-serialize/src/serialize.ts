@@ -57,7 +57,7 @@ function escapeString(str: string): string {
     const idx = re.lastIndex - 1;
     if (idx > last) result += str.slice(last, idx);
     result += ESCAPE_TABLE[str.charCodeAt(idx)];
-    last = re.lastIndex;
+    last = idx + 1;
   }
   if (last === 0) return str;
   if (last < str.length) result += str.slice(last);
