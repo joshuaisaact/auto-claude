@@ -229,10 +229,13 @@ function buildObjectSerializerCodegen(schema: Schema): Serializer {
   }
 
   // Generate fast path block: assign locals, check all non-null, return single expression
+  // Merges adjacent string literals to reduce concat operations
   function genFastPath(): string {
     let assigns = '';
     let check = '';
-    let expr = `'{'`;
+    // Build as segments: {type: 'lit', val} or {type: 'expr', val}
+    const segs: {type: string; val: string}[] = [];
+    segs.push({type: 'lit', val: '{'});
     for (let i = 0; i < keys.length; i++) {
       const key = keys[i];
       const localVar = `_${i}`;
@@ -241,17 +244,43 @@ function buildObjectSerializerCodegen(schema: Schema): Serializer {
       const e = makeExpr(i);
       const prefix = i === 0 ? e.prefix : e.commaPrefix;
       if (props[key].type === "string") {
-        expr += ` + '${prefix}' + $$esc(${localVar}) + '"'`;
+        segs.push({type: 'lit', val: prefix});
+        segs.push({type: 'expr', val: `$$esc(${localVar})`});
+        segs.push({type: 'lit', val: '"'});
       } else {
+        segs.push({type: 'lit', val: prefix});
         const inline = getInlineExpr(props[key], localVar);
         if (inline !== null) {
-          expr += ` + '${prefix}' + ${inline}`;
+          segs.push({type: 'expr', val: inline});
         } else {
-          expr += ` + '${prefix}' + s${serializerMap.get(i)}(${localVar})`;
+          segs.push({type: 'expr', val: `s${serializerMap.get(i)}(${localVar})`});
         }
       }
     }
-    expr += ` + '}'`;
+    segs.push({type: 'lit', val: '}'});
+
+    // Merge adjacent lit segments
+    const merged: {type: string; val: string}[] = [];
+    for (const seg of segs) {
+      if (seg.type === 'lit' && merged.length > 0 && merged[merged.length - 1].type === 'lit') {
+        merged[merged.length - 1].val += seg.val;
+      } else {
+        merged.push({...seg});
+      }
+    }
+
+    // Build expression
+    let expr = '';
+    for (let i = 0; i < merged.length; i++) {
+      const seg = merged[i];
+      if (i > 0) expr += ' + ';
+      if (seg.type === 'lit') {
+        expr += `'${seg.val}'`;
+      } else {
+        expr += seg.val;
+      }
+    }
+
     return `${assigns}if (${check}) return ${expr};\n`;
   }
 
