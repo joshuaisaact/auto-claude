@@ -45,11 +45,11 @@ export function compile(pattern: string): Matcher {
         } else { ok = false; break; }
       }
       if (ok && commonPrefix !== "") {
-        const prefixSlash = commonPrefix + "/";
         const checkFrom = commonPrefix.length + 1;
+        const prefCodes = makeCodes(commonPrefix + "/");
         const suffixCheck = buildMultiSuffixCheck(suffixes);
         return (path: string) => {
-          if (!path.startsWith(prefixSlash)) return false;
+          if (!startsWithCodes(path, prefCodes)) return false;
           if (!suffixCheck(path)) return false;
           return !hasHiddenSegmentFrom(path, checkFrom);
         };
@@ -90,10 +90,10 @@ function hasHiddenSegmentFrom(path: string, from: number): boolean {
   return path.indexOf("/.", from) !== -1;
 }
 
-// Pre-compute char codes for a suffix to use in fast comparison
-function makeSuffixCodes(suffix: string): Uint16Array {
-  const codes = new Uint16Array(suffix.length);
-  for (let i = 0; i < suffix.length; i++) codes[i] = suffix.charCodeAt(i);
+// Pre-compute char codes for fast comparison
+function makeCodes(s: string): Uint16Array {
+  const codes = new Uint16Array(s.length);
+  for (let i = 0; i < s.length; i++) codes[i] = s.charCodeAt(i);
   return codes;
 }
 
@@ -109,12 +109,23 @@ function endsWithCodes(path: string, codes: Uint16Array): boolean {
   return true;
 }
 
+// Check if path starts with prefix using pre-computed char codes
+function startsWithCodes(path: string, codes: Uint16Array): boolean {
+  const pLen = path.length;
+  const sLen = codes.length;
+  if (pLen < sLen) return false;
+  for (let i = 0; i < sLen; i++) {
+    if (path.charCodeAt(i) !== codes[i]) return false;
+  }
+  return true;
+}
+
 function tryFastPath(pattern: string): Matcher | null {
   // Pattern: **/*.ext or **/*.foo.bar (globstar + slash + star + literal suffix)
   {
     const m = matchGlobstarSlashStarSuffix(pattern);
     if (m !== null) {
-      const codes = makeSuffixCodes(m);
+      const codes = makeCodes(m);
       return (path: string) => {
         if (!endsWithCodes(path, codes)) return false;
         return !hasHiddenSegment(path);
@@ -127,12 +138,12 @@ function tryFastPath(pattern: string): Matcher | null {
     const m = matchPrefixGlobstarSuffix(pattern);
     if (m !== null) {
       const { prefix, suffix } = m;
-      const prefixSlash = prefix + "/";
       const checkFrom = prefix.length + 1;
-      const codes = makeSuffixCodes(suffix);
+      const prefCodes = makeCodes(prefix + "/");
+      const sufCodes = makeCodes(suffix);
       return (path: string) => {
-        if (!path.startsWith(prefixSlash)) return false;
-        if (!endsWithCodes(path, codes)) return false;
+        if (!startsWithCodes(path, prefCodes)) return false;
+        if (!endsWithCodes(path, sufCodes)) return false;
         return !hasHiddenSegmentFrom(path, checkFrom);
       };
     }
@@ -145,8 +156,9 @@ function tryFastPath(pattern: string): Matcher | null {
       const prefix = m;
       const prefixSlash = prefix + "/";
       const checkFrom = prefixSlash.length;
+      const prefCodes = makeCodes(prefixSlash);
       return (path: string) => {
-        if (!path.startsWith(prefixSlash)) return false;
+        if (!startsWithCodes(path, prefCodes)) return false;
         return !hasHiddenSegmentFrom(path, checkFrom);
       };
     }
@@ -159,10 +171,11 @@ function tryFastPath(pattern: string): Matcher | null {
       const { prefix, suffix } = m;
       const prefixSlash = prefix + "/";
       const checkFrom = prefixSlash.length;
-      const codes = makeSuffixCodes(suffix);
+      const prefCodes = makeCodes(prefixSlash);
+      const sufCodes = makeCodes(suffix);
       return (path: string) => {
-        if (!path.startsWith(prefixSlash)) return false;
-        if (!endsWithCodes(path, codes)) return false;
+        if (!startsWithCodes(path, prefCodes)) return false;
+        if (!endsWithCodes(path, sufCodes)) return false;
         // Must be single segment after prefix (no more slashes)
         // Check no / after prefix
         if (path.indexOf("/", checkFrom) !== -1) return false;
@@ -179,11 +192,13 @@ function tryFastPath(pattern: string): Matcher | null {
     if (m !== null) {
       const { prefix, qCount, suffix } = m;
       const prefixSlash = prefix + "/";
+      const prefCodes = makeCodes(prefixSlash);
+      const sufCodes = makeCodes(suffix);
       const totalLen = prefixSlash.length + qCount + suffix.length;
       return (path: string) => {
         if (path.length !== totalLen) return false;
-        if (!path.startsWith(prefixSlash)) return false;
-        if (!path.endsWith(suffix)) return false;
+        if (!startsWithCodes(path, prefCodes)) return false;
+        if (!endsWithCodes(path, sufCodes)) return false;
         // The ? chars must not be / or leading dot
         const qStart = prefixSlash.length;
         if (path.charCodeAt(qStart) === 46) return false; // leading dot
@@ -200,12 +215,12 @@ function tryFastPath(pattern: string): Matcher | null {
     const m = matchPrefixGlobstarLiteralDotStar(pattern);
     if (m !== null) {
       const { prefix, literal } = m;
-      const prefixSlash = prefix + "/";
+      const prefCodes = makeCodes(prefix + "/");
       const literalDot = literal + ".";
       const literalDotLen = literalDot.length;
       const checkFrom = prefix.length + 1;
       return (path: string) => {
-        if (!path.startsWith(prefixSlash)) return false;
+        if (!startsWithCodes(path, prefCodes)) return false;
         // Find the last / in path to get basename start
         const lastSlash = path.lastIndexOf("/");
         const bnStart = lastSlash + 1;
@@ -225,7 +240,7 @@ function tryFastPath(pattern: string): Matcher | null {
     const m = matchGlobstarCharClassSuffix(pattern);
     if (m !== null) {
       const { charTest, suffix } = m;
-      const codes = makeSuffixCodes(suffix);
+      const codes = makeCodes(suffix);
       return (path: string) => {
         if (!endsWithCodes(path, codes)) return false;
         if (hasHiddenSegment(path)) return false;
@@ -423,16 +438,16 @@ function parseCharClass(body: string): ((code: number) => boolean) | null {
 function buildMultiSuffixCheck(suffixes: string[]): (path: string) => boolean {
   if (suffixes.length === 1) {
     const s = suffixes[0];
-    const codes = makeSuffixCodes(s);
+    const codes = makeCodes(s);
     return (path: string) => endsWithCodes(path, codes);
   }
   if (suffixes.length === 2) {
-    const c0 = makeSuffixCodes(suffixes[0]);
-    const c1 = makeSuffixCodes(suffixes[1]);
+    const c0 = makeCodes(suffixes[0]);
+    const c1 = makeCodes(suffixes[1]);
     return (path: string) => endsWithCodes(path, c0) || endsWithCodes(path, c1);
   }
   // General case: group by last char code for fast discrimination
-  const codes = suffixes.map(makeSuffixCodes);
+  const codes = suffixes.map(makeCodes);
   return (path: string) => {
     for (let i = 0; i < codes.length; i++) {
       if (endsWithCodes(path, codes[i])) return true;
