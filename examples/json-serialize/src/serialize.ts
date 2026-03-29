@@ -228,17 +228,47 @@ function buildObjectSerializerCodegen(schema: Schema): Serializer {
     }
   }
 
+  // Generate fast path expression for when all properties are defined
+  function genFastPathExpr(vPrefix: string): string {
+    let expr = `'{'`;
+    for (let i = 0; i < keys.length; i++) {
+      const key = keys[i];
+      const vexpr = `${vPrefix}[${JSON.stringify(key)}]`;
+      const e = makeExpr(i);
+      const prefix = i === 0 ? e.prefix : e.commaPrefix;
+      if (props[key].type === "string") {
+        expr += ` + '${prefix}' + $$esc(${vexpr}) + '"'`;
+      } else {
+        const inline = getInlineExpr(props[key], vexpr);
+        if (inline !== null) {
+          expr += ` + '${prefix}' + ${inline}`;
+        } else {
+          expr += ` + '${prefix}' + s${serializerMap.get(i)}(${vexpr})`;
+        }
+      }
+    }
+    expr += ` + '}'`;
+    return expr;
+  }
+
+  function genFastPathCheck(vPrefix: string): string {
+    return keys.map(k => `${vPrefix}[${JSON.stringify(k)}] != null`).join(' && ');
+  }
+
   let code = "return function(obj) {\nvar v;\n";
 
-  // Generate: first property uses '{prefix', rest use ',prefix'
-  // Handle the first property specially (no comma, no first flag)
-  const first = makeExpr(0);
-  code += `v = obj[${JSON.stringify(keys[0])}];\n`;
   if (keys.length === 1) {
-    // Only one property
+    const first = makeExpr(0);
+    code += `v = obj[${JSON.stringify(keys[0])}];\n`;
     code += `if (v != null) return '{' + '${first.prefix}' + ${first.expr} + '}';\n`;
     code += `return '{}';\n`;
   } else {
+    // Speculative fast path: all properties are defined (common case)
+    code += `if (${genFastPathCheck('obj')}) return ${genFastPathExpr('obj')};\n`;
+
+    // Fallback: property-by-property with null checks
+    const first = makeExpr(0);
+    code += `v = obj[${JSON.stringify(keys[0])}];\n`;
     code += `var r;\n`;
     code += `if (v != null) r = '{${first.prefix}' + ${first.expr};\n`;
     code += `else r = '{';\n`;
