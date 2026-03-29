@@ -236,17 +236,17 @@ function buildObjectSerializerCodegen(schema: Schema): Serializer {
   code += `v = obj[${JSON.stringify(keys[0])}];\n`;
   if (keys.length === 1) {
     // Only one property
-    code += `if (v !== undefined) return '{' + '${first.prefix}' + ${first.expr} + '}';\n`;
+    code += `if (v != null) return '{' + '${first.prefix}' + ${first.expr} + '}';\n`;
     code += `return '{}';\n`;
   } else {
     code += `var r;\n`;
-    code += `if (v !== undefined) r = '{${first.prefix}' + ${first.expr};\n`;
+    code += `if (v != null) r = '{${first.prefix}' + ${first.expr};\n`;
     code += `else r = '{';\n`;
 
     for (let i = 1; i < keys.length; i++) {
       const e = makeExpr(i);
       code += `v = obj[${JSON.stringify(keys[i])}];\n`;
-      code += `if (v !== undefined) r += (r.length === 1 ? '${e.prefix}' : '${e.commaPrefix}') + ${e.expr};\n`;
+      code += `if (v != null) r += (r.length === 1 ? '${e.prefix}' : '${e.commaPrefix}') + ${e.expr};\n`;
     }
     code += `return r + '}';\n`;
   }
