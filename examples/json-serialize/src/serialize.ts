@@ -79,16 +79,18 @@ function buildSerializer(schema: Schema): Serializer {
 function buildArraySerializer(schema: Schema): Serializer {
   const itemSerializer = schema.items ? buildSerializer(schema.items) : (v: unknown) => JSON.stringify(v);
 
-  return (val: unknown) => {
-    const arr = val as unknown[];
-    if (arr.length === 0) return "[]";
-
-    let result = "[" + itemSerializer(arr[0]);
-    for (let i = 1; i < arr.length; i++) {
-      result += "," + itemSerializer(arr[i]);
+  // Generate a codegen array serializer
+  const fn = new Function("ser", `return function(val) {
+    var arr = val;
+    var len = arr.length;
+    if (len === 0) return "[]";
+    var r = "[" + ser(arr[0]);
+    for (var i = 1; i < len; i++) {
+      r += "," + ser(arr[i]);
     }
-    return result + "]";
-  };
+    return r + "]";
+  };`)(itemSerializer);
+  return fn;
 }
 
 function buildObjectSerializerCodegen(schema: Schema): Serializer {
@@ -99,17 +101,15 @@ function buildObjectSerializerCodegen(schema: Schema): Serializer {
     return () => "{}";
   }
 
-  // Build child serializers
+  // Build child serializers and pass them as individual arguments
   const childSerializers: Serializer[] = [];
-  for (const key of keys) {
-    childSerializers.push(buildSerializer(props[key]));
+  const paramNames: string[] = [];
+  for (let i = 0; i < keys.length; i++) {
+    childSerializers.push(buildSerializer(props[keys[i]]));
+    paramNames.push("s" + i);
   }
 
-  // Generate code that inlines property access
-  const args = ["obj"];
-  const closureArgs = ["serializers"];
-
-  let code = "var o = obj;\nvar r = '{';\nvar first = true;\nvar v;\n";
+  let code = "return function(obj) {\nvar r = '{';\nvar first = true;\nvar v;\n";
 
   for (let i = 0; i < keys.length; i++) {
     const key = keys[i];
@@ -117,15 +117,15 @@ function buildObjectSerializerCodegen(schema: Schema): Serializer {
     const prefix = jsonKey + ":";
     const commaPrefix = "," + prefix;
 
-    code += `v = o[${jsonKey}];\n`;
+    code += `v = obj[${jsonKey}];\n`;
     code += `if (v !== undefined) {\n`;
-    code += `  if (first) { r += '${prefix}' + serializers[${i}](v); first = false; }\n`;
-    code += `  else { r += '${commaPrefix}' + serializers[${i}](v); }\n`;
+    code += `  if (first) { r += '${prefix}' + s${i}(v); first = false; }\n`;
+    code += `  else { r += '${commaPrefix}' + s${i}(v); }\n`;
     code += `}\n`;
   }
 
-  code += "return r + '}';\n";
+  code += "return r + '}';\n};";
 
-  const fn = new Function("serializers", "return function(obj) {\n" + code + "\n};")(childSerializers);
+  const fn = new Function(...paramNames, code)(...childSerializers);
   return fn;
 }
