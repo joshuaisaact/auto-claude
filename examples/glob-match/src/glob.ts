@@ -101,24 +101,9 @@ function tryFastPath(pattern: string): Matcher | null {
     const m = matchGlobstarSlashStarSuffix(pattern);
     if (m !== null) {
       const suffix = m;
-      const suffixLen = suffix.length;
       return (path: string) => {
-        // Must end with suffix
         if (!path.endsWith(suffix)) return false;
-        // The char before suffix must be a non-dot, non-slash char OR suffix starts at position 0
-        // Actually: the filename part (after last /) must not start with dot
-        // and no hidden segments in the path
-        if (hasHiddenSegment(path)) return false;
-        // The character at the start of the basename must not be a dot
-        // suffix includes the dot (e.g. ".ts"), so we need to check the last segment
-        // The * before the suffix matches [^/]* (no leading dot)
-        // Find the last / before the suffix match
-        const matchStart = path.length - suffixLen;
-        // Find the start of the segment containing matchStart
-        let segStart = matchStart;
-        while (segStart > 0 && path.charCodeAt(segStart - 1) !== 47) segStart--;
-        // The segment must not start with dot (handled by hasHiddenSegment above)
-        return true;
+        return !hasHiddenSegment(path);
       };
     }
   }
