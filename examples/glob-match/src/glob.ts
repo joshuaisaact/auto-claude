@@ -15,17 +15,18 @@ export function compile(pattern: string): Matcher {
   if (expanded) {
     // Check if all expanded patterns are **/*.suffix
     {
-      const suffixes: string[] = [];
+      const suffixStrs: string[] = [];
       let ok = true;
       for (const p of expanded) {
         const gs = matchGlobstarSlashStarSuffix(p);
-        if (gs !== null) { suffixes.push(gs); } else { ok = false; break; }
+        if (gs !== null) { suffixStrs.push(gs); } else { ok = false; break; }
       }
       if (ok) {
+        const suffixCodes = suffixStrs.map(makeSuffixCodes);
         return (path: string) => {
           let anySuffix = false;
-          for (let i = 0; i < suffixes.length; i++) {
-            if (path.endsWith(suffixes[i])) { anySuffix = true; break; }
+          for (let i = 0; i < suffixCodes.length; i++) {
+            if (endsWithCodes(path, suffixCodes[i])) { anySuffix = true; break; }
           }
           if (!anySuffix) return false;
           return !hasHiddenSegment(path);
@@ -35,7 +36,7 @@ export function compile(pattern: string): Matcher {
 
     // Check if all expanded patterns are prefix/**/*.suffix with same prefix
     {
-      const suffixes: string[] = [];
+      const suffixStrs: string[] = [];
       let ok = true;
       let commonPrefix = "";
       for (const p of expanded) {
@@ -43,17 +44,18 @@ export function compile(pattern: string): Matcher {
         if (pgs !== null) {
           if (commonPrefix === "") commonPrefix = pgs.prefix;
           else if (commonPrefix !== pgs.prefix) { ok = false; break; }
-          suffixes.push(pgs.suffix);
+          suffixStrs.push(pgs.suffix);
         } else { ok = false; break; }
       }
       if (ok && commonPrefix !== "") {
         const prefixSlash = commonPrefix + "/";
         const checkFrom = commonPrefix.length + 1;
+        const suffixCodes = suffixStrs.map(makeSuffixCodes);
         return (path: string) => {
           if (!path.startsWith(prefixSlash)) return false;
           let anySuffix = false;
-          for (let i = 0; i < suffixes.length; i++) {
-            if (path.endsWith(suffixes[i])) { anySuffix = true; break; }
+          for (let i = 0; i < suffixCodes.length; i++) {
+            if (endsWithCodes(path, suffixCodes[i])) { anySuffix = true; break; }
           }
           if (!anySuffix) return false;
           return !hasHiddenSegmentFrom(path, checkFrom);
@@ -95,14 +97,33 @@ function hasHiddenSegmentFrom(path: string, from: number): boolean {
   return path.indexOf("/.", from) !== -1;
 }
 
+// Pre-compute char codes for a suffix to use in fast comparison
+function makeSuffixCodes(suffix: string): Uint16Array {
+  const codes = new Uint16Array(suffix.length);
+  for (let i = 0; i < suffix.length; i++) codes[i] = suffix.charCodeAt(i);
+  return codes;
+}
+
+// Check if path ends with suffix using pre-computed char codes
+function endsWithCodes(path: string, codes: Uint16Array): boolean {
+  const pLen = path.length;
+  const sLen = codes.length;
+  if (pLen < sLen) return false;
+  const offset = pLen - sLen;
+  for (let i = 0; i < sLen; i++) {
+    if (path.charCodeAt(offset + i) !== codes[i]) return false;
+  }
+  return true;
+}
+
 function tryFastPath(pattern: string): Matcher | null {
   // Pattern: **/*.ext or **/*.foo.bar (globstar + slash + star + literal suffix)
   {
     const m = matchGlobstarSlashStarSuffix(pattern);
     if (m !== null) {
-      const suffix = m;
+      const codes = makeSuffixCodes(m);
       return (path: string) => {
-        if (!path.endsWith(suffix)) return false;
+        if (!endsWithCodes(path, codes)) return false;
         return !hasHiddenSegment(path);
       };
     }
@@ -115,9 +136,10 @@ function tryFastPath(pattern: string): Matcher | null {
       const { prefix, suffix } = m;
       const prefixSlash = prefix + "/";
       const checkFrom = prefix.length + 1;
+      const codes = makeSuffixCodes(suffix);
       return (path: string) => {
         if (!path.startsWith(prefixSlash)) return false;
-        if (!path.endsWith(suffix)) return false;
+        if (!endsWithCodes(path, codes)) return false;
         return !hasHiddenSegmentFrom(path, checkFrom);
       };
     }
@@ -144,9 +166,10 @@ function tryFastPath(pattern: string): Matcher | null {
       const { prefix, suffix } = m;
       const prefixSlash = prefix + "/";
       const checkFrom = prefixSlash.length;
+      const codes = makeSuffixCodes(suffix);
       return (path: string) => {
         if (!path.startsWith(prefixSlash)) return false;
-        if (!path.endsWith(suffix)) return false;
+        if (!endsWithCodes(path, codes)) return false;
         // Must be single segment after prefix (no more slashes)
         // Check no / after prefix
         if (path.indexOf("/", checkFrom) !== -1) return false;
@@ -209,8 +232,9 @@ function tryFastPath(pattern: string): Matcher | null {
     const m = matchGlobstarCharClassSuffix(pattern);
     if (m !== null) {
       const { charTest, suffix } = m;
+      const codes = makeSuffixCodes(suffix);
       return (path: string) => {
-        if (!path.endsWith(suffix)) return false;
+        if (!endsWithCodes(path, codes)) return false;
         if (hasHiddenSegment(path)) return false;
         // Find the basename
         const lastSlash = path.lastIndexOf("/");
