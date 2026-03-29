@@ -54,11 +54,14 @@ See `templates/program.md.template` for the skeleton. See `examples/` for concre
 
 ## Install as a Claude Code skill
 
-Clone the repo and symlink it into your Claude Code skills directory:
+```bash
+curl -fsSL https://raw.githubusercontent.com/joshuaisaact/auto-claude/main/install.sh | bash
+```
+
+Or manually:
 
 ```bash
-git clone https://github.com/joshuaisaact/auto-claude.git
-ln -s "$(pwd)/auto-claude" ~/.claude/skills/autoresearch
+git clone https://github.com/joshuaisaact/auto-claude.git ~/.claude/skills/autoresearch
 ```
 
 Then in any project, use `/autoresearch` to set up an experiment. Claude will walk you through picking a target, metric, and constraints, then start the loop.
