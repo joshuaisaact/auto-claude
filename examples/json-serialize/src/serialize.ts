@@ -269,19 +269,19 @@ function buildObjectSerializerCodegen(schema: Schema): Serializer {
       }
     }
 
-    // Build expression
-    let expr = '';
-    for (let i = 0; i < merged.length; i++) {
-      const seg = merged[i];
-      if (i > 0) expr += ' + ';
+    // Build as template literal for more efficient string building
+    let tmpl = '`';
+    for (const seg of merged) {
       if (seg.type === 'lit') {
-        expr += `'${seg.val}'`;
+        // Escape backticks and ${} in literal parts
+        tmpl += seg.val.replace(/`/g, '\\`').replace(/\$/g, '\\$');
       } else {
-        expr += seg.val;
+        tmpl += '${' + seg.val + '}';
       }
     }
+    tmpl += '`';
 
-    return `${assigns}if (${check}) return ${expr};\n`;
+    return `${assigns}if (${check}) return ${tmpl};\n`;
   }
 
   let code = "return function(obj) {\nvar v;\n";
