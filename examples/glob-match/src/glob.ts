@@ -10,9 +10,58 @@ export function compile(pattern: string): Matcher {
   const fast = tryFastPath(pattern);
   if (fast) return fast;
 
-  // Try brace expansion into multiple fast paths
+  // Try brace expansion with specialized multi-suffix matchers
   const expanded = expandBraces(pattern);
   if (expanded) {
+    // Check if all expanded patterns are **/*.suffix
+    {
+      const suffixes: string[] = [];
+      let ok = true;
+      for (const p of expanded) {
+        const gs = matchGlobstarSlashStarSuffix(p);
+        if (gs !== null) { suffixes.push(gs); } else { ok = false; break; }
+      }
+      if (ok) {
+        return (path: string) => {
+          let anySuffix = false;
+          for (let i = 0; i < suffixes.length; i++) {
+            if (path.endsWith(suffixes[i])) { anySuffix = true; break; }
+          }
+          if (!anySuffix) return false;
+          return !hasHiddenSegment(path);
+        };
+      }
+    }
+
+    // Check if all expanded patterns are prefix/**/*.suffix with same prefix
+    {
+      const suffixes: string[] = [];
+      let ok = true;
+      let commonPrefix = "";
+      for (const p of expanded) {
+        const pgs = matchPrefixGlobstarSuffix(p);
+        if (pgs !== null) {
+          if (commonPrefix === "") commonPrefix = pgs.prefix;
+          else if (commonPrefix !== pgs.prefix) { ok = false; break; }
+          suffixes.push(pgs.suffix);
+        } else { ok = false; break; }
+      }
+      if (ok && commonPrefix !== "") {
+        const prefixSlash = commonPrefix + "/";
+        const prefixLen = commonPrefix.length + 1;
+        return (path: string) => {
+          if (!path.startsWith(prefixSlash)) return false;
+          let anySuffix = false;
+          for (let i = 0; i < suffixes.length; i++) {
+            if (path.endsWith(suffixes[i])) { anySuffix = true; break; }
+          }
+          if (!anySuffix) return false;
+          return !hasHiddenSegment(path.substring(prefixLen));
+        };
+      }
+    }
+
+    // Generic brace expansion: try fast paths for each
     const matchers = expanded.map(p => tryFastPath(p));
     if (matchers.every(m => m !== null)) {
       const fns = matchers as Matcher[];
