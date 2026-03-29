@@ -295,16 +295,16 @@ function buildObjectSerializerCodegen(schema: Schema): Serializer {
     // Speculative fast path: all properties are defined (common case)
     code += genFastPath();
 
-    // Fallback: property-by-property with null checks
+    // Fallback: property-by-property with null checks (reuse local vars from fast path)
     const first = makeExpr(0);
-    code += `v = obj[${JSON.stringify(keys[0])}];\n`;
+    code += `v = _0;\n`;
     code += `var r;\n`;
     code += `if (v != null) r = '{${first.prefix}' + ${first.expr};\n`;
     code += `else r = '{';\n`;
 
     for (let i = 1; i < keys.length; i++) {
       const e = makeExpr(i);
-      code += `v = obj[${JSON.stringify(keys[i])}];\n`;
+      code += `v = _${i};\n`;
       code += `if (v != null) r += (r.length === 1 ? '${e.prefix}' : '${e.commaPrefix}') + ${e.expr};\n`;
     }
     code += `return r + '}';\n`;
