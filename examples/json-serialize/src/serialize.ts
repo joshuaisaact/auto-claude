@@ -228,31 +228,31 @@ function buildObjectSerializerCodegen(schema: Schema): Serializer {
     }
   }
 
-  // Generate fast path expression for when all properties are defined
-  function genFastPathExpr(vPrefix: string): string {
+  // Generate fast path block: assign locals, check all non-null, return single expression
+  function genFastPath(): string {
+    let assigns = '';
+    let check = '';
     let expr = `'{'`;
     for (let i = 0; i < keys.length; i++) {
       const key = keys[i];
-      const vexpr = `${vPrefix}[${JSON.stringify(key)}]`;
+      const localVar = `_${i}`;
+      assigns += `var ${localVar} = obj[${JSON.stringify(key)}];\n`;
+      check += (i > 0 ? ' && ' : '') + `${localVar} != null`;
       const e = makeExpr(i);
       const prefix = i === 0 ? e.prefix : e.commaPrefix;
       if (props[key].type === "string") {
-        expr += ` + '${prefix}' + $$esc(${vexpr}) + '"'`;
+        expr += ` + '${prefix}' + $$esc(${localVar}) + '"'`;
       } else {
-        const inline = getInlineExpr(props[key], vexpr);
+        const inline = getInlineExpr(props[key], localVar);
         if (inline !== null) {
           expr += ` + '${prefix}' + ${inline}`;
         } else {
-          expr += ` + '${prefix}' + s${serializerMap.get(i)}(${vexpr})`;
+          expr += ` + '${prefix}' + s${serializerMap.get(i)}(${localVar})`;
         }
       }
     }
     expr += ` + '}'`;
-    return expr;
-  }
-
-  function genFastPathCheck(vPrefix: string): string {
-    return keys.map(k => `${vPrefix}[${JSON.stringify(k)}] != null`).join(' && ');
+    return `${assigns}if (${check}) return ${expr};\n`;
   }
 
   let code = "return function(obj) {\nvar v;\n";
@@ -264,7 +264,7 @@ function buildObjectSerializerCodegen(schema: Schema): Serializer {
     code += `return '{}';\n`;
   } else {
     // Speculative fast path: all properties are defined (common case)
-    code += `if (${genFastPathCheck('obj')}) return ${genFastPathExpr('obj')};\n`;
+    code += genFastPath();
 
     // Fallback: property-by-property with null checks
     const first = makeExpr(0);
