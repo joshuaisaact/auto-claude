@@ -105,19 +105,17 @@ function buildArraySerializer(schema: Schema): Serializer {
 
   // Specialized array serializers for common item types
   if (itemType === "string") {
-    // String arrays: inline the fast path
-    const fn = new Function("re", "esc", `return function(val) {
+    // String arrays: escapeString already handles clean strings efficiently
+    const fn = new Function("esc", `return function(val) {
       var arr = val;
       var len = arr.length;
       if (len === 0) return "[]";
-      var s = arr[0];
-      var r = '["' + (re.test(s) ? esc(s) : s) + '"';
+      var r = '["' + esc(arr[0]) + '"';
       for (var i = 1; i < len; i++) {
-        s = arr[i];
-        r += ',"' + (re.test(s) ? esc(s) : s) + '"';
+        r += ',"' + esc(arr[i]) + '"';
       }
       return r + "]";
-    };`)(NEEDS_ESCAPE, escapeString);
+    };`)(escapeString);
     return fn;
   }
 
@@ -186,20 +184,14 @@ function buildObjectSerializerCodegen(schema: Schema): Serializer {
   const paramNames: string[] = [];
   const serializerMap: Map<number, number> = new Map();
 
-  // Add escapeString for string properties (quote-less escape)
+  // Add escapeString for string properties
   let hasStringProp = false;
   for (let i = 0; i < keys.length; i++) {
     if (props[keys[i]].type === "string") { hasStringProp = true; break; }
   }
-  let escIdx = -1;
-  let reIdx = -1;
   if (hasStringProp) {
-    escIdx = childSerializers.length;
     paramNames.push("$$esc");
     childSerializers.push(escapeString as unknown as Serializer);
-    reIdx = childSerializers.length;
-    paramNames.push("$$re");
-    childSerializers.push(NEEDS_ESCAPE as unknown as Serializer);
   }
 
   for (let i = 0; i < keys.length; i++) {
@@ -226,7 +218,7 @@ function buildObjectSerializerCodegen(schema: Schema): Serializer {
       return {
         prefix: jsonKey + ':"',
         commaPrefix: "," + jsonKey + ':"',
-        expr: `($$re.test(v) ? $$esc(v) : v) + '"'`,
+        expr: `$$esc(v) + '"'`,
       };
     } else {
       const pfx = jsonKey + ":";
