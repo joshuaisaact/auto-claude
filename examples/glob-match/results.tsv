@@ -1,0 +1,18 @@
+commit	metric_ms	status	description
+6284e20	166.5	keep	baseline
+9f02269	94.9	keep	hand-rolled matchers for common glob patterns (fast paths)
+6c54536	61.2	keep	fast paths for prefix/**/literal.* and **/*[charclass]*suffix
+93fbf77	55.0	keep	optimize brace expansion: shared hasHiddenSegment for multi-suffix
+b78e03e	45.8	keep	optimize hasHiddenSegment: use indexOf for /. search
+b8ee3e4	44.5	keep	eliminate substring allocation with hasHiddenSegmentFrom
+14b5975	41.7	keep	remove dead code in globstar suffix matcher
+31d109a	40.0	keep	charCodeAt-based suffix comparison via Uint16Array
+5f7c2ae	39.2	keep	buildMultiSuffixCheck with unrolled 2-suffix case
+5b34d06	37.1	keep	replace startsWith with charCodeAt-based prefix comparison
+ab9939e	38.4	revert	inline 2-suffix brace expansion with native endsWith (noise/regression)
+b486ee7	45.9	revert	charCodeAt loop in hasHiddenSegment slower than indexOf
+356194a	43.6	revert	inline endsWith+hasHiddenSegment (disrupted JIT)
+808925e	37.6	revert	unrolled endsWithCodes for 3/4 char suffixes (noise)
+e7b27b8	37.4	revert	discriminate multi-suffix by last char (no improvement)
+1470d5e	42.3	revert	native startsWith/endsWith slower than charCodeAt
+bc0879c	36.2	keep	last-char dispatch for multi-suffix checks

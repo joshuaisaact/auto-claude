@@ -1,0 +1,15 @@
+{
+  "name": "glob-match",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "verify": "tsx verify.ts",
+    "bench": "tsx bench.ts",
+    "eval": "./eval.sh"
+  },
+  "dependencies": {
+    "picomatch": "^4.0.0",
+    "tsx": "^4.19.0",
+    "typescript": "^5.7.0"
+  }
+}

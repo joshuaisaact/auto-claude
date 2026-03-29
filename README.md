@@ -48,6 +48,7 @@ See `templates/program.md.template` for the skeleton. See `examples/` for concre
 
 - **[LRU cache optimization](examples/lru-cache/)** -- Agent started from a naive LRU cache and beat mnemonist (the performance-focused LRU library) by 26% in 25 experiments. [Full results.](examples/lru-cache/RESULTS.md)
 - **[Source map codec](examples/sourcemap-codec/)** -- Agent optimized a VLQ source map encoder/decoder, then we combined its findings with techniques from @jridgewell/sourcemap-codec. Result: 12-23% faster than jridgewell on real Next.js/Babel/chart.js source maps. [Full results.](examples/sourcemap-codec/RESULTS.md)
+- **[Glob matching](examples/glob-match/)** -- Agent replaced regex-based matching with hand-rolled string operations. 3.7x faster than picomatch, feature-complete, faster on every real-world pattern tested.
 - **[Perf optimization with hardware counters](examples/perf-optimization.md)** -- Template for optimizing hot paths using `perf stat`.
 
 ## Design choices

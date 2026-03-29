@@ -5,77 +5,154 @@
 
 export type Matcher = (path: string) => boolean;
 
-export function compile(pattern: string): Matcher {
-  // Try fast paths first (no braces)
-  const fast = tryFastPath(pattern);
-  if (fast) return fast;
+export interface GlobOptions {
+  /** When true, allow matching dotfiles (skip hidden segment checks) */
+  dot?: boolean;
+  /** Case-insensitive matching */
+  nocase?: boolean;
+  /** If pattern has no slashes, match against basename only */
+  matchBase?: boolean;
+  /** Patterns to exclude from matching */
+  ignore?: string | string[];
+}
+
+export function compile(pattern: string, options?: GlobOptions): Matcher {
+  const opts = options ?? {};
+
+  // Negation: !pattern means match everything except what the pattern matches
+  // But !(...) is an extglob, not negation
+  if (pattern.length > 1 && pattern.charCodeAt(0) === 33 /* ! */ && pattern.charCodeAt(1) !== 40 /* ( */) {
+    const inner = compile(pattern.substring(1), opts);
+    return (path: string) => !inner(path);
+  }
+
+  // matchBase: if pattern has no slashes, match against basename only
+  if (opts.matchBase && pattern.indexOf("/") === -1) {
+    const baseMatcher = compileCore(pattern, opts);
+    return (path: string) => {
+      const lastSlash = path.lastIndexOf("/");
+      const basename = lastSlash === -1 ? path : path.substring(lastSlash + 1);
+      return baseMatcher(basename);
+    };
+  }
+
+  const matcher = compileCore(pattern, opts);
+
+  // ignore: compile ignore patterns and exclude matches
+  if (opts.ignore) {
+    const ignorePatterns = typeof opts.ignore === "string" ? [opts.ignore] : opts.ignore;
+    const ignoreMatchers = ignorePatterns.map(p => compileCore(p, opts));
+    return (path: string) => {
+      if (!matcher(path)) return false;
+      for (let i = 0; i < ignoreMatchers.length; i++) {
+        if (ignoreMatchers[i](path)) return false;
+      }
+      return true;
+    };
+  }
+
+  return matcher;
+}
+
+/** Core compilation without negation/matchBase/ignore wrapping */
+function compileCore(pattern: string, opts: GlobOptions): Matcher {
+  const dot = opts.dot === true;
+  const nocase = opts.nocase === true;
+
+  // Try fast paths first (no braces, no extglobs)
+  if (!nocase) {
+    const fast = tryFastPath(pattern, dot);
+    if (fast) return fast;
+  }
 
   // Try brace expansion with specialized multi-suffix matchers
   const expanded = expandBraces(pattern);
   if (expanded) {
-    // Check if all expanded patterns are **/*.suffix
-    {
-      const suffixes: string[] = [];
-      let ok = true;
-      for (const p of expanded) {
-        const gs = matchGlobstarSlashStarSuffix(p);
-        if (gs !== null) { suffixes.push(gs); } else { ok = false; break; }
-      }
-      if (ok) {
-        // Build a single function that checks all suffixes without loop overhead
-        const suffixCheck = buildMultiSuffixCheck(suffixes);
-        return (path: string) => {
-          if (!suffixCheck(path)) return false;
-          return !hasHiddenSegment(path);
-        };
-      }
-    }
-
-    // Check if all expanded patterns are prefix/**/*.suffix with same prefix
-    {
-      const suffixes: string[] = [];
-      let ok = true;
-      let commonPrefix = "";
-      for (const p of expanded) {
-        const pgs = matchPrefixGlobstarSuffix(p);
-        if (pgs !== null) {
-          if (commonPrefix === "") commonPrefix = pgs.prefix;
-          else if (commonPrefix !== pgs.prefix) { ok = false; break; }
-          suffixes.push(pgs.suffix);
-        } else { ok = false; break; }
-      }
-      if (ok && commonPrefix !== "") {
-        const checkFrom = commonPrefix.length + 1;
-        const prefCodes = makeCodes(commonPrefix + "/");
-        const suffixCheck = buildMultiSuffixCheck(suffixes);
-        return (path: string) => {
-          if (!startsWithCodes(path, prefCodes)) return false;
-          if (!suffixCheck(path)) return false;
-          return !hasHiddenSegmentFrom(path, checkFrom);
-        };
-      }
-    }
-
-    // Generic brace expansion: try fast paths for each
-    const matchers = expanded.map(p => tryFastPath(p));
-    if (matchers.every(m => m !== null)) {
-      const fns = matchers as Matcher[];
-      return (path: string) => {
-        for (let i = 0; i < fns.length; i++) {
-          if (fns[i](path)) return true;
+    if (!nocase) {
+      // Check if all expanded patterns are **/*.suffix
+      {
+        const suffixes: string[] = [];
+        let ok = true;
+        for (const p of expanded) {
+          const gs = matchGlobstarSlashStarSuffix(p);
+          if (gs !== null) { suffixes.push(gs); } else { ok = false; break; }
         }
-        return false;
-      };
+        if (ok) {
+          // Build a single function that checks all suffixes without loop overhead
+          const suffixCheck = buildMultiSuffixCheck(suffixes);
+          if (dot) {
+            return (path: string) => suffixCheck(path);
+          }
+          return (path: string) => {
+            if (!suffixCheck(path)) return false;
+            return !hasHiddenSegment(path);
+          };
+        }
+      }
+
+      // Check if all expanded patterns are prefix/**/*.suffix with same prefix
+      {
+        const suffixes: string[] = [];
+        let ok = true;
+        let commonPrefix = "";
+        for (const p of expanded) {
+          const pgs = matchPrefixGlobstarSuffix(p);
+          if (pgs !== null) {
+            if (commonPrefix === "") commonPrefix = pgs.prefix;
+            else if (commonPrefix !== pgs.prefix) { ok = false; break; }
+            suffixes.push(pgs.suffix);
+          } else { ok = false; break; }
+        }
+        if (ok && commonPrefix !== "") {
+          const checkFrom = commonPrefix.length + 1;
+          const prefCodes = makeCodes(commonPrefix + "/");
+          const suffixCheck = buildMultiSuffixCheck(suffixes);
+          if (dot) {
+            return (path: string) => {
+              if (!startsWithCodes(path, prefCodes)) return false;
+              return suffixCheck(path);
+            };
+          }
+          return (path: string) => {
+            if (!startsWithCodes(path, prefCodes)) return false;
+            if (!suffixCheck(path)) return false;
+            return !hasHiddenSegmentFrom(path, checkFrom);
+          };
+        }
+      }
+
+      // Generic brace expansion: try fast paths for each
+      {
+        const matchers = expanded.map(p => tryFastPath(p, dot));
+        if (matchers.every(m => m !== null)) {
+          const fns = matchers as Matcher[];
+          return (path: string) => {
+            for (let i = 0; i < fns.length; i++) {
+              if (fns[i](path)) return true;
+            }
+            return false;
+          };
+        }
+      }
     }
+
+    // Fallback: compile each expanded pattern individually
+    const fns = expanded.map(p => compileCore(p, opts));
+    return (path: string) => {
+      for (let i = 0; i < fns.length; i++) {
+        if (fns[i](path)) return true;
+      }
+      return false;
+    };
   }
 
   // Fall back to regex for complex patterns
-  const regex = globToRegex(pattern);
+  const regex = globToRegex(pattern, dot, nocase);
   return (path: string) => regex.test(path);
 }
 
-export function isMatch(path: string, pattern: string): boolean {
-  return compile(pattern)(path);
+export function isMatch(path: string, pattern: string, options?: GlobOptions): boolean {
+  return compile(pattern, options)(path);
 }
 
 // Check if any segment of a path starts with a dot
@@ -120,12 +197,15 @@ function startsWithCodes(path: string, codes: Uint16Array): boolean {
   return true;
 }
 
-function tryFastPath(pattern: string): Matcher | null {
+function tryFastPath(pattern: string, dot: boolean): Matcher | null {
   // Pattern: **/*.ext or **/*.foo.bar (globstar + slash + star + literal suffix)
   {
     const m = matchGlobstarSlashStarSuffix(pattern);
     if (m !== null) {
       const codes = makeCodes(m);
+      if (dot) {
+        return (path: string) => endsWithCodes(path, codes);
+      }
       return (path: string) => {
         if (!endsWithCodes(path, codes)) return false;
         return !hasHiddenSegment(path);
@@ -141,6 +221,12 @@ function tryFastPath(pattern: string): Matcher | null {
       const checkFrom = prefix.length + 1;
       const prefCodes = makeCodes(prefix + "/");
       const sufCodes = makeCodes(suffix);
+      if (dot) {
+        return (path: string) => {
+          if (!startsWithCodes(path, prefCodes)) return false;
+          return endsWithCodes(path, sufCodes);
+        };
+      }
       return (path: string) => {
         if (!startsWithCodes(path, prefCodes)) return false;
         if (!endsWithCodes(path, sufCodes)) return false;
@@ -157,6 +243,9 @@ function tryFastPath(pattern: string): Matcher | null {
       const prefixSlash = prefix + "/";
       const checkFrom = prefixSlash.length;
       const prefCodes = makeCodes(prefixSlash);
+      if (dot) {
+        return (path: string) => startsWithCodes(path, prefCodes);
+      }
       return (path: string) => {
         if (!startsWithCodes(path, prefCodes)) return false;
         return !hasHiddenSegmentFrom(path, checkFrom);
@@ -173,6 +262,14 @@ function tryFastPath(pattern: string): Matcher | null {
       const checkFrom = prefixSlash.length;
       const prefCodes = makeCodes(prefixSlash);
       const sufCodes = makeCodes(suffix);
+      if (dot) {
+        return (path: string) => {
+          if (!startsWithCodes(path, prefCodes)) return false;
+          if (!endsWithCodes(path, sufCodes)) return false;
+          if (path.indexOf("/", checkFrom) !== -1) return false;
+          return true;
+        };
+      }
       return (path: string) => {
         if (!startsWithCodes(path, prefCodes)) return false;
         if (!endsWithCodes(path, sufCodes)) return false;
@@ -195,6 +292,18 @@ function tryFastPath(pattern: string): Matcher | null {
       const prefCodes = makeCodes(prefixSlash);
       const sufCodes = makeCodes(suffix);
       const totalLen = prefixSlash.length + qCount + suffix.length;
+      if (dot) {
+        return (path: string) => {
+          if (path.length !== totalLen) return false;
+          if (!startsWithCodes(path, prefCodes)) return false;
+          if (!endsWithCodes(path, sufCodes)) return false;
+          const qStart = prefixSlash.length;
+          for (let i = qStart; i < qStart + qCount; i++) {
+            if (path.charCodeAt(i) === 47) return false;
+          }
+          return true;
+        };
+      }
       return (path: string) => {
         if (path.length !== totalLen) return false;
         if (!startsWithCodes(path, prefCodes)) return false;
@@ -219,6 +328,18 @@ function tryFastPath(pattern: string): Matcher | null {
       const literalDot = literal + ".";
       const literalDotLen = literalDot.length;
       const checkFrom = prefix.length + 1;
+      if (dot) {
+        return (path: string) => {
+          if (!startsWithCodes(path, prefCodes)) return false;
+          const lastSlash = path.lastIndexOf("/");
+          const bnStart = lastSlash + 1;
+          if (path.length - bnStart <= literalDotLen) return false;
+          for (let k = 0; k < literalDotLen; k++) {
+            if (path.charCodeAt(bnStart + k) !== literalDot.charCodeAt(k)) return false;
+          }
+          return true;
+        };
+      }
       return (path: string) => {
         if (!startsWithCodes(path, prefCodes)) return false;
         // Find the last / in path to get basename start
@@ -235,12 +356,87 @@ function tryFastPath(pattern: string): Matcher | null {
     }
   }
 
+  // Pattern: *.ext (root-level star + literal suffix, no directory)
+  {
+    const m = matchRootStarSuffix(pattern);
+    if (m !== null) {
+      const codes = makeCodes(m);
+      if (dot) {
+        return (path: string) => {
+          if (path.indexOf("/") !== -1) return false;
+          return endsWithCodes(path, codes);
+        };
+      }
+      return (path: string) => {
+        if (path.indexOf("/") !== -1) return false;
+        if (path.charCodeAt(0) === 46) return false;
+        return endsWithCodes(path, codes);
+      };
+    }
+  }
+
+  // Pattern: **/*.literal.* or **/literal.* (globstar + fixed middle + wildcard ext)
+  {
+    const m = matchGlobstarLiteralDotStar(pattern);
+    if (m !== null) {
+      const litDotCodes = makeCodes(m);
+      if (dot) {
+        return (path: string) => {
+          // Find basename
+          const lastSlash = path.lastIndexOf("/");
+          const bnStart = lastSlash + 1;
+          // Basename must contain the literal. prefix somewhere followed by a dot and at least one char
+          const remaining = path.length - bnStart;
+          if (remaining <= litDotCodes.length) return false;
+          // Check if basename contains the literal. prefix
+          const offset = bnStart;
+          for (let i = 0; i <= remaining - litDotCodes.length; i++) {
+            let match = true;
+            for (let j = 0; j < litDotCodes.length; j++) {
+              if (path.charCodeAt(offset + i + j) !== litDotCodes[j]) { match = false; break; }
+            }
+            if (match) return true;
+          }
+          return false;
+        };
+      }
+      return (path: string) => {
+        if (hasHiddenSegment(path)) return false;
+        const lastSlash = path.lastIndexOf("/");
+        const bnStart = lastSlash + 1;
+        const remaining = path.length - bnStart;
+        if (remaining <= litDotCodes.length) return false;
+        const offset = bnStart;
+        for (let i = 0; i <= remaining - litDotCodes.length; i++) {
+          let match = true;
+          for (let j = 0; j < litDotCodes.length; j++) {
+            if (path.charCodeAt(offset + i + j) !== litDotCodes[j]) { match = false; break; }
+          }
+          if (match) return true;
+        }
+        return false;
+      };
+    }
+  }
+
   // Pattern: **/*[charclass]*suffix (e.g. **/*[A-Z]*.tsx)
   {
     const m = matchGlobstarCharClassSuffix(pattern);
     if (m !== null) {
       const { charTest, suffix } = m;
       const codes = makeCodes(suffix);
+      if (dot) {
+        return (path: string) => {
+          if (!endsWithCodes(path, codes)) return false;
+          const lastSlash = path.lastIndexOf("/");
+          const basenameStart = lastSlash + 1;
+          const searchEnd = path.length - suffix.length;
+          for (let i = basenameStart; i < searchEnd; i++) {
+            if (charTest(path.charCodeAt(i))) return true;
+          }
+          return false;
+        };
+      }
       return (path: string) => {
         if (!endsWithCodes(path, codes)) return false;
         if (hasHiddenSegment(path)) return false;
@@ -259,6 +455,41 @@ function tryFastPath(pattern: string): Matcher | null {
   }
 
   return null;
+}
+
+// Match pattern like *.ext (root-level, no directories)
+function matchRootStarSuffix(pattern: string): string | null {
+  if (pattern.length < 2) return null;
+  if (pattern.charCodeAt(0) !== 42) return null; // must start with *
+  // Check for extglob: *( is *(pattern) not star+paren
+  if (pattern.charCodeAt(1) === 40) return null;
+  if (pattern.indexOf("/") !== -1) return null; // no slashes
+  const suffix = pattern.substring(1);
+  for (let i = 0; i < suffix.length; i++) {
+    const c = suffix.charCodeAt(i);
+    if (c === 42 || c === 63 || c === 91 || c === 123 || c === 92 || c === 40) return null;
+  }
+  return suffix;
+}
+
+// Match pattern like **/*.test.* or **/literal.* (globstar + star + literal + .*)
+// Returns the literal. prefix to search for in the basename (e.g. ".test.")
+function matchGlobstarLiteralDotStar(pattern: string): string | null {
+  // Must start with **/*
+  if (pattern.length < 6) return null;
+  if (pattern.charCodeAt(0) !== 42 || pattern.charCodeAt(1) !== 42 ||
+      pattern.charCodeAt(2) !== 47 || pattern.charCodeAt(3) !== 42) return null;
+  // Must end with .*
+  if (pattern.charCodeAt(pattern.length - 1) !== 42 ||
+      pattern.charCodeAt(pattern.length - 2) !== 46) return null;
+  // Middle part (between **/* and .*) must be a literal
+  const middle = pattern.substring(4, pattern.length - 2);
+  for (let i = 0; i < middle.length; i++) {
+    const c = middle.charCodeAt(i);
+    if (c === 42 || c === 63 || c === 91 || c === 123 || c === 92 || c === 47) return null;
+  }
+  // Return the search string: middle + "."
+  return middle + ".";
 }
 
 // Match pattern like **/*.ts, **/*.test.ts
@@ -485,30 +716,192 @@ function buildMultiSuffixCheck(suffixes: string[]): (path: string) => boolean {
 
 // --- Brace expansion for fast paths ---
 
-// Handle **/*.{ts,tsx} by expanding braces and creating multiple fast matchers
+// Handle **/*.{ts,tsx} by expanding braces and creating multiple fast matchers.
+// Also handles brace ranges like {1..5}, {a..z}, {01..05}.
 function expandBraces(pattern: string): string[] | null {
   const braceStart = pattern.indexOf("{");
   if (braceStart < 0) return null;
-  const braceEnd = pattern.indexOf("}", braceStart);
+  const braceEnd = findMatchingBrace(pattern, braceStart);
   if (braceEnd < 0) return null;
-  // Check no nested braces (simple case only)
   const inner = pattern.substring(braceStart + 1, braceEnd);
-  if (inner.indexOf("{") >= 0) return null;
   const prefix = pattern.substring(0, braceStart);
   const suffix = pattern.substring(braceEnd + 1);
+
+  // Check for range pattern: {start..end}
+  // picomatch only expands ranges without leading zeros
+  const rangeMatch = inner.match(/^(-?\d+)\.\.(-?\d+)$/);
+  if (rangeMatch) {
+    const startStr = rangeMatch[1];
+    const endStr = rangeMatch[2];
+    // Skip ranges with leading zeros — picomatch treats them as literal
+    const hasLeadingZero = (startStr.length > 1 && startStr.charCodeAt(0) === 48) ||
+                           (endStr.length > 1 && endStr.charCodeAt(0) === 48);
+    if (!hasLeadingZero) {
+      const startVal = parseInt(startStr, 10);
+      const endVal = parseInt(endStr, 10);
+      const step = startVal <= endVal ? 1 : -1;
+      const alternatives: string[] = [];
+      for (let v = startVal; step > 0 ? v <= endVal : v >= endVal; v += step) {
+        alternatives.push(String(v));
+      }
+      const expanded = alternatives.map(alt => prefix + alt + suffix);
+      // Recursively expand remaining braces in suffix
+      if (suffix.indexOf("{") >= 0) {
+        const result: string[] = [];
+        for (const e of expanded) {
+          const sub = expandBraces(e);
+          if (sub) result.push(...sub);
+          else result.push(e);
+        }
+        return result;
+      }
+      return expanded;
+    }
+  }
+
+  // Check for alpha range: {a..z}
+  const alphaMatch = inner.match(/^([a-zA-Z])\.\.([a-zA-Z])$/);
+  if (alphaMatch) {
+    const startCode = alphaMatch[1].charCodeAt(0);
+    const endCode = alphaMatch[2].charCodeAt(0);
+    const step = startCode <= endCode ? 1 : -1;
+    const alternatives: string[] = [];
+    for (let c = startCode; step > 0 ? c <= endCode : c >= endCode; c += step) {
+      alternatives.push(String.fromCharCode(c));
+    }
+    const expanded = alternatives.map(alt => prefix + alt + suffix);
+    if (suffix.indexOf("{") >= 0) {
+      const result: string[] = [];
+      for (const e of expanded) {
+        const sub = expandBraces(e);
+        if (sub) result.push(...sub);
+        else result.push(e);
+      }
+      return result;
+    }
+    return expanded;
+  }
+
+  // Check no nested braces in this segment (simple comma-separated case)
+  if (inner.indexOf("{") >= 0) {
+    // Nested braces — need recursive expansion
+    // Split by comma at depth 0
+    const alternatives = splitAtCommas(inner);
+    // Recursively expand each alternative
+    const allExpanded: string[] = [];
+    for (const alt of alternatives) {
+      const full = prefix + alt + suffix;
+      const sub = expandBraces(full);
+      if (sub) allExpanded.push(...sub);
+      else allExpanded.push(full);
+    }
+    return allExpanded;
+  }
+
   const alternatives = inner.split(",");
-  return alternatives.map(alt => prefix + alt + suffix);
+  const expanded = alternatives.map(alt => prefix + alt + suffix);
+
+  // Recursively expand remaining braces in suffix
+  if (suffix.indexOf("{") >= 0) {
+    const result: string[] = [];
+    for (const e of expanded) {
+      const sub = expandBraces(e);
+      if (sub) result.push(...sub);
+      else result.push(e);
+    }
+    return result;
+  }
+
+  return expanded;
+}
+
+/** Find matching closing brace, handling nesting */
+function findMatchingBrace(pattern: string, start: number): number {
+  let depth = 0;
+  for (let i = start; i < pattern.length; i++) {
+    if (pattern.charCodeAt(i) === 123) depth++;
+    else if (pattern.charCodeAt(i) === 125) {
+      depth--;
+      if (depth === 0) return i;
+    }
+  }
+  return -1;
+}
+
+/** Split string by commas at depth 0 (respecting nested braces) */
+function splitAtCommas(s: string): string[] {
+  const parts: string[] = [];
+  let depth = 0;
+  let current = "";
+  for (let i = 0; i < s.length; i++) {
+    const ch = s.charCodeAt(i);
+    if (ch === 123) { depth++; current += s[i]; }
+    else if (ch === 125) { depth--; current += s[i]; }
+    else if (ch === 44 && depth === 0) { parts.push(current); current = ""; }
+    else { current += s[i]; }
+  }
+  parts.push(current);
+  return parts;
 }
 
 // --- Regex fallback ---
 
-function globToRegex(pattern: string): RegExp {
-  let result = "^";
+function globToRegex(pattern: string, dot: boolean = false, nocase: boolean = false): RegExp {
+  // Require at least one character (picomatch never matches empty strings)
+  let result = "^(?=.)";
   let i = 0;
   const len = pattern.length;
 
+  // Helper to check if we're at start of a path segment
+  const atSegStart = (pos: number) => pos === 0 || pattern[pos - 1] === "/";
+
   while (i < len) {
     const ch = pattern[i];
+
+    // Extglob: +(pat), *(pat), ?(pat), @(pat), !(pat)
+    if ((ch === "+" || ch === "*" || ch === "?" || ch === "@" || ch === "!") &&
+        i + 1 < len && pattern[i + 1] === "(") {
+      const extType = ch;
+      i += 2; // skip past '('
+      // Collect content until matching ')', handling nesting
+      let depth = 1;
+      let content = "";
+      while (i < len && depth > 0) {
+        if (pattern[i] === "(") { depth++; content += pattern[i]; }
+        else if (pattern[i] === ")") {
+          depth--;
+          if (depth > 0) content += pattern[i];
+        }
+        else if (pattern[i] === "\\") {
+          content += pattern[i];
+          i++;
+          if (i < len) content += pattern[i];
+        }
+        else { content += pattern[i]; }
+        i++;
+      }
+      // Split content by | at depth 0, convert each part recursively
+      const parts = splitExtglobParts(content);
+      const fragments = parts.map(part => {
+        const partRegex = globToRegex(part, dot, false);
+        return partRegex.source.slice(1, -1); // strip ^...$
+      });
+      const group = fragments.join("|");
+
+      if (extType === "+") {
+        result += `(?:${group})+`;
+      } else if (extType === "*") {
+        result += `(?:${group})*`;
+      } else if (extType === "?") {
+        result += `(?:${group})?`;
+      } else if (extType === "@") {
+        result += `(?:${group})`;
+      } else if (extType === "!") {
+        // !(pat) = match anything that doesn't match pat
+        result += `(?!(?:${group})$)[^/]*`;
+      }
+      continue;
+    }
 
     if (ch === "\\") {
       i++;
@@ -519,23 +912,29 @@ function globToRegex(pattern: string): RegExp {
     } else if (ch === "*") {
       if (pattern[i + 1] === "*") {
         if (pattern[i + 2] === "/") {
-          result += "(?:(?:(?!(?:\\/|^)\\.).)*\\/)?";
+          if (dot) {
+            result += "(?:.*\\/)?";
+          } else {
+            result += "(?:(?:(?!(?:\\/|^)\\.).)*\\/)?";
+          }
           i += 3;
         } else {
-          result += "(?:(?!(?:\\/|^)\\.).)*";
+          if (dot) {
+            result += ".*";
+          } else {
+            result += "(?:(?!(?:\\/|^)\\.).)*";
+          }
           i += 2;
         }
       } else {
-        const atSegStart = i === 0 || pattern[i - 1] === "/";
-        if (atSegStart) {
+        if (!dot && atSegStart(i)) {
           result += "(?!\\.)";
         }
         result += "[^/]*";
         i++;
       }
     } else if (ch === "?") {
-      const atSegStart = i === 0 || pattern[i - 1] === "/";
-      if (atSegStart) {
+      if (!dot && atSegStart(i)) {
         result += "(?!\\.)";
       }
       result += "[^/]";
@@ -586,7 +985,7 @@ function globToRegex(pattern: string): RegExp {
         i++;
       }
       const fragments = alternatives.map(alt => {
-        const altRegex = globToRegex(alt);
+        const altRegex = globToRegex(alt, dot, false);
         return altRegex.source.slice(1, -1);
       });
       result += `(?:${fragments.join("|")})`;
@@ -597,7 +996,25 @@ function globToRegex(pattern: string): RegExp {
   }
 
   result += "$";
-  return new RegExp(result);
+  let flags = "";
+  if (nocase) flags += "i";
+  return new RegExp(result, flags);
+}
+
+/** Split extglob content by | at depth 0 */
+function splitExtglobParts(s: string): string[] {
+  const parts: string[] = [];
+  let depth = 0;
+  let current = "";
+  for (let i = 0; i < s.length; i++) {
+    const ch = s[i];
+    if (ch === "(") { depth++; current += ch; }
+    else if (ch === ")") { depth--; current += ch; }
+    else if (ch === "|" && depth === 0) { parts.push(current); current = ""; }
+    else { current += ch; }
+  }
+  parts.push(current);
+  return parts;
 }
 
 function escapeRegex(ch: string): string {
