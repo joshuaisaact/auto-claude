@@ -1,0 +1,15 @@
+{
+  "name": "json-serialize",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "verify": "tsx verify.ts",
+    "bench": "tsx bench.ts",
+    "eval": "./eval.sh"
+  },
+  "dependencies": {
+    "fast-json-stringify": "^6.3.0",
+    "tsx": "^4.19.0",
+    "typescript": "^5.7.0"
+  }
+}

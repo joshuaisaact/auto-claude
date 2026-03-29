@@ -1,0 +1,36 @@
+commit	metric_ms	status	description
+2673ca5	147.9	keep	baseline
+f1474ca	78.7	keep	string escape lookup table + fast path for clean strings
+f0d926c	69.2	keep	codegen for object serializers via new Function()
+9c24e77	75.0	revert	inline number/boolean in codegen - regression
+80b807f	69.1	keep	individual serializer params in codegen + codegen arrays
+627f6a9	87.6	revert	Uint8Array escape check instead of regex - much worse
+09a0843	67.7	keep	inline number/boolean in codegen, reduce function calls
+78b3994	95.4	revert	comma-prefix + slice approach - much worse due to string copy
+1794e6c	68.4	revert	JSON.stringify for slow path - marginal, no clear win
+462f90f	74.7	revert	fully recursive codegen with IIFEs - overhead from anon functions
+c20ef9c	71.7	revert	inline string fast path in codegen - ternary overhead
+5c9dced	66.9	keep	merge key prefix with opening quote for string values
+bd6cf49	64.8	keep	skip redundant regex test in escapeString
+8f73f76	64.0	keep	specialized array serializers for string/number/boolean items
+094363d	72.3	revert	separator string variable - 3 string concats worse than if/else
+0e838df	62.9	keep	eliminate first flag with length check for comma
+8b979aa	62.8	keep	remove redundant empty string concat for numbers
+25d16e2	64.3	revert	regex replace for escaping - slower than manual loop
+a30e09e	94.5	revert	regex replace (String.replace) for escaping - no improvement
+d224452	81.2	keep	regex exec loop for escape scanning instead of char-by-char
+31c29e1	83.4	revert	single serializeString call in codegen - slightly worse
+9bb2d50	82.1	revert	boolean flag instead of r.length===1 - no improvement
+837df22	108.0	revert	array+join for escaping - much worse due to allocation
+b825b88	80.9	keep	inline escape loop in serializeString
+f30f3f3	76.1	keep	remove regex test fast path, always call escapeString (avoid double scan)
+009fd3a	75.5	keep	use v != null instead of v !== undefined
+48522e4	75.0	keep	speculative fast path for all-defined objects
+a3529cb	74.1	keep	local vars in fast path to avoid double property access
+c8f4e33	74.2	keep	merge adjacent string literals in fast path
+2936867	73.5	keep	reuse local vars in fallback from fast path
+1354ac5	73.4	keep	template literal in fast path instead of string concat
+a9911d0	74.6	keep	eliminate var v, reuse local vars in fallback
+9fba6e3	74.4	revert	simplify escapeString loop - no improvement
+481afea	65.5	keep	regex.test()+lastIndex instead of exec() - avoid match object alloc
+aa00fdb	67.0	keep	use idx+1 instead of re.lastIndex for last var - marginal
