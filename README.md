@@ -4,6 +4,14 @@ Autonomous research harness for Claude Code. Give an agent a problem, a file to 
 
 Inspired by [Karpathy's autoresearch](https://github.com/karpathy/autoresearch). Same idea, generalized beyond ML training: the agent modifies code, runs an experiment, checks if the result improved, keeps or discards, and repeats. You come back to a log of experiments and (hopefully) a better solution.
 
+## Examples
+
+- **[LRU cache optimization](examples/lru-cache/)** -- Agent started from a naive LRU cache and beat mnemonist (the performance-focused LRU library) by 26% in 25 experiments. [Full results.](examples/lru-cache/RESULTS.md)
+- **[Source map codec](examples/sourcemap-codec/)** -- Agent optimized a VLQ source map encoder/decoder, then we combined its findings with techniques from @jridgewell/sourcemap-codec. Result: 12-23% faster than jridgewell on real Next.js/Babel/chart.js source maps. [Full results.](examples/sourcemap-codec/RESULTS.md)
+- **[Glob matching](examples/glob-match/)** -- Agent replaced regex-based matching with hand-rolled string operations. 3.7x faster than picomatch, feature-complete, faster on every real-world pattern tested.
+- **[JSON serialization](examples/json-serialize/)** -- Agent optimized a schema-based serializer with codegen, escape lookup tables, and allocation-free regex scanning. 53% faster than native `JSON.stringify`, 8% faster than fast-json-stringify on real GitHub/JSONPlaceholder API data.
+- **[Perf optimization with hardware counters](examples/perf-optimization.md)** -- Template for optimizing hot paths using `perf stat`.
+
 ## How it works
 
 Three things matter:
@@ -44,13 +52,7 @@ A program.md needs:
 3. **How to measure** -- the exact command to run and how to extract the result
 4. **Constraints** -- what the agent cannot do (break the API, add dependencies, etc.)
 
-See `templates/program.md.template` for the skeleton. See `examples/` for concrete examples:
-
-- **[LRU cache optimization](examples/lru-cache/)** -- Agent started from a naive LRU cache and beat mnemonist (the performance-focused LRU library) by 26% in 25 experiments. [Full results.](examples/lru-cache/RESULTS.md)
-- **[Source map codec](examples/sourcemap-codec/)** -- Agent optimized a VLQ source map encoder/decoder, then we combined its findings with techniques from @jridgewell/sourcemap-codec. Result: 12-23% faster than jridgewell on real Next.js/Babel/chart.js source maps. [Full results.](examples/sourcemap-codec/RESULTS.md)
-- **[Glob matching](examples/glob-match/)** -- Agent replaced regex-based matching with hand-rolled string operations. 3.7x faster than picomatch, feature-complete, faster on every real-world pattern tested.
-- **[JSON serialization](examples/json-serialize/)** -- Agent optimized a schema-based serializer with codegen, escape lookup tables, and allocation-free regex scanning. 53% faster than native `JSON.stringify`, 8% faster than fast-json-stringify on real GitHub/JSONPlaceholder API data.
-- **[Perf optimization with hardware counters](examples/perf-optimization.md)** -- Template for optimizing hot paths using `perf stat`.
+See `templates/program.md.template` for the skeleton, or the examples above for concrete programs.
 
 ## Install as a Claude Code skill
 
