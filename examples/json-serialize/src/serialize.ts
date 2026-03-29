@@ -31,7 +31,20 @@ function serializeString(val: unknown): string {
   if (!NEEDS_ESCAPE.test(str)) {
     return '"' + str + '"';
   }
-  return '"' + escapeString(str) + '"';
+  // Inline escape loop to avoid extra function call + string concat
+  const re = ESCAPE_RE_G;
+  re.lastIndex = 0;
+  let result = '"';
+  let last = 0;
+  let match;
+  while ((match = re.exec(str)) !== null) {
+    const idx = match.index;
+    if (idx > last) result += str.slice(last, idx);
+    result += ESCAPE_TABLE[str.charCodeAt(idx)];
+    last = idx + 1;
+  }
+  if (last < str.length) result += str.slice(last);
+  return result + '"';
 }
 
 // escapeString returns the escaped string WITHOUT quotes.
