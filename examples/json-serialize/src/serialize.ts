@@ -284,28 +284,47 @@ function buildObjectSerializerCodegen(schema: Schema): Serializer {
     return `${assigns}if (${check}) return ${tmpl};\n`;
   }
 
-  let code = "return function(obj) {\nvar v;\n";
+  // Generate fallback expr for a given key using local var _i
+  function makeFallbackExpr(keyIdx: number): { prefix: string; commaPrefix: string; expr: string } {
+    const key = keys[keyIdx];
+    const jsonKey = JSON.stringify(key);
+    const isString = props[key].type === "string";
+    const localVar = `_${keyIdx}`;
+
+    if (isString) {
+      return {
+        prefix: jsonKey + ':"',
+        commaPrefix: "," + jsonKey + ':"',
+        expr: `$$esc(${localVar}) + '"'`,
+      };
+    } else {
+      const pfx = jsonKey + ":";
+      const inline = getInlineExpr(props[key], localVar);
+      const expr = inline !== null ? inline : `s${serializerMap.get(keyIdx)}(${localVar})`;
+      return { prefix: pfx, commaPrefix: "," + pfx, expr };
+    }
+  }
+
+  let code = "return function(obj) {\n";
 
   if (keys.length === 1) {
-    const first = makeExpr(0);
-    code += `v = obj[${JSON.stringify(keys[0])}];\n`;
-    code += `if (v != null) return '{' + '${first.prefix}' + ${first.expr} + '}';\n`;
+    code += `var _0 = obj[${JSON.stringify(keys[0])}];\n`;
+    const first = makeFallbackExpr(0);
+    code += `if (_0 != null) return '{' + '${first.prefix}' + ${first.expr} + '}';\n`;
     code += `return '{}';\n`;
   } else {
     // Speculative fast path: all properties are defined (common case)
     code += genFastPath();
 
-    // Fallback: property-by-property with null checks (reuse local vars from fast path)
-    const first = makeExpr(0);
-    code += `v = _0;\n`;
+    // Fallback: property-by-property using local vars from fast path
+    const first = makeFallbackExpr(0);
     code += `var r;\n`;
-    code += `if (v != null) r = '{${first.prefix}' + ${first.expr};\n`;
+    code += `if (_0 != null) r = '{${first.prefix}' + ${first.expr};\n`;
     code += `else r = '{';\n`;
 
     for (let i = 1; i < keys.length; i++) {
-      const e = makeExpr(i);
-      code += `v = _${i};\n`;
-      code += `if (v != null) r += (r.length === 1 ? '${e.prefix}' : '${e.commaPrefix}') + ${e.expr};\n`;
+      const e = makeFallbackExpr(i);
+      code += `if (_${i} != null) r += (r.length === 1 ? '${e.prefix}' : '${e.commaPrefix}') + ${e.expr};\n`;
     }
     code += `return r + '}';\n`;
   }
