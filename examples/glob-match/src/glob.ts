@@ -48,7 +48,7 @@ export function compile(pattern: string): Matcher {
       }
       if (ok && commonPrefix !== "") {
         const prefixSlash = commonPrefix + "/";
-        const prefixLen = commonPrefix.length + 1;
+        const checkFrom = commonPrefix.length + 1;
         return (path: string) => {
           if (!path.startsWith(prefixSlash)) return false;
           let anySuffix = false;
@@ -56,7 +56,7 @@ export function compile(pattern: string): Matcher {
             if (path.endsWith(suffixes[i])) { anySuffix = true; break; }
           }
           if (!anySuffix) return false;
-          return !hasHiddenSegment(path.substring(prefixLen));
+          return !hasHiddenSegmentFrom(path, checkFrom);
         };
       }
     }
@@ -85,15 +85,14 @@ export function isMatch(path: string, pattern: string): boolean {
 
 // Check if any segment of a path starts with a dot
 function hasHiddenSegment(path: string): boolean {
-  // Check first char
   if (path.charCodeAt(0) === 46) return true;
-  // Look for /. pattern — use indexOf which is native and fast
   return path.indexOf("/.") !== -1;
 }
 
-// Check if path segment (from start to end exclusive) starts with dot
-function segmentStartsDot(path: string, start: number): boolean {
-  return start < path.length && path.charCodeAt(start) === 46;
+// Check if any segment starting from offset starts with a dot
+function hasHiddenSegmentFrom(path: string, from: number): boolean {
+  if (path.charCodeAt(from) === 46) return true;
+  return path.indexOf("/.", from) !== -1;
 }
 
 function tryFastPath(pattern: string): Matcher | null {
@@ -130,13 +129,11 @@ function tryFastPath(pattern: string): Matcher | null {
     if (m !== null) {
       const { prefix, suffix } = m;
       const prefixSlash = prefix + "/";
+      const checkFrom = prefix.length + 1;
       return (path: string) => {
         if (!path.startsWith(prefixSlash)) return false;
         if (!path.endsWith(suffix)) return false;
-        // Check no hidden segments after prefix
-        const rest = path.substring(prefix.length + 1);
-        if (hasHiddenSegment(rest)) return false;
-        return true;
+        return !hasHiddenSegmentFrom(path, checkFrom);
       };
     }
   }
@@ -147,12 +144,10 @@ function tryFastPath(pattern: string): Matcher | null {
     if (m !== null) {
       const prefix = m;
       const prefixSlash = prefix + "/";
+      const checkFrom = prefixSlash.length;
       return (path: string) => {
         if (!path.startsWith(prefixSlash)) return false;
-        // Check no hidden segments in the rest
-        const rest = path.substring(prefixSlash.length);
-        if (hasHiddenSegment(rest)) return false;
-        return true;
+        return !hasHiddenSegmentFrom(path, checkFrom);
       };
     }
   }
@@ -163,14 +158,15 @@ function tryFastPath(pattern: string): Matcher | null {
     if (m !== null) {
       const { prefix, suffix } = m;
       const prefixSlash = prefix + "/";
+      const checkFrom = prefixSlash.length;
       return (path: string) => {
         if (!path.startsWith(prefixSlash)) return false;
         if (!path.endsWith(suffix)) return false;
         // Must be single segment after prefix (no more slashes)
-        const rest = path.substring(prefixSlash.length);
-        if (rest.indexOf("/") !== -1) return false;
+        // Check no / after prefix
+        if (path.indexOf("/", checkFrom) !== -1) return false;
         // Must not start with dot
-        if (rest.charCodeAt(0) === 46) return false;
+        if (path.charCodeAt(checkFrom) === 46) return false;
         return true;
       };
     }
@@ -205,21 +201,20 @@ function tryFastPath(pattern: string): Matcher | null {
       const { prefix, literal } = m;
       const prefixSlash = prefix + "/";
       const literalDot = literal + ".";
+      const literalDotLen = literalDot.length;
+      const checkFrom = prefix.length + 1;
       return (path: string) => {
         if (!path.startsWith(prefixSlash)) return false;
-        // Find the last / in path to get basename
+        // Find the last / in path to get basename start
         const lastSlash = path.lastIndexOf("/");
-        const basename = path.substring(lastSlash + 1);
-        // basename must start with literal + "."
-        if (!basename.startsWith(literalDot)) return false;
-        // basename must have content after the dot (at least one char)
-        if (basename.length <= literalDot.length) return false;
-        // The extension part must not contain /
-        // (it won't since we extracted from lastSlash)
-        // No hidden segments in the path after prefix
-        const rest = path.substring(prefix.length + 1);
-        if (hasHiddenSegment(rest)) return false;
-        return true;
+        const bnStart = lastSlash + 1;
+        // Check basename starts with literal + "."
+        // Compare char by char to avoid substring allocation
+        if (path.length - bnStart <= literalDotLen) return false;
+        for (let k = 0; k < literalDotLen; k++) {
+          if (path.charCodeAt(bnStart + k) !== literalDot.charCodeAt(k)) return false;
+        }
+        return !hasHiddenSegmentFrom(path, checkFrom);
       };
     }
   }
