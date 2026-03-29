@@ -1,4 +1,4 @@
-// Schema-based JSON serializer — optimized with lookup table + fast path for strings.
+// Schema-based JSON serializer — optimized with code generation.
 // This is the file the autoresearch agent edits.
 
 export interface Schema {
@@ -15,21 +15,18 @@ const ESCAPE_TABLE: string[] = new Array(128);
 for (let i = 0; i < 32; i++) {
   ESCAPE_TABLE[i] = "\\u00" + (i < 16 ? "0" : "") + i.toString(16);
 }
-ESCAPE_TABLE[8] = "\\b";   // backspace
-ESCAPE_TABLE[9] = "\\t";   // tab
-ESCAPE_TABLE[10] = "\\n";  // newline
-ESCAPE_TABLE[12] = "\\f";  // form feed
-ESCAPE_TABLE[13] = "\\r";  // carriage return
-ESCAPE_TABLE[34] = '\\"';  // double quote
-ESCAPE_TABLE[92] = "\\\\"; // backslash
-// All other entries remain undefined (no escaping needed)
+ESCAPE_TABLE[8] = "\\b";
+ESCAPE_TABLE[9] = "\\t";
+ESCAPE_TABLE[10] = "\\n";
+ESCAPE_TABLE[12] = "\\f";
+ESCAPE_TABLE[13] = "\\r";
+ESCAPE_TABLE[34] = '\\"';
+ESCAPE_TABLE[92] = "\\\\";
 
-// Regex to detect if a string needs escaping at all
 const NEEDS_ESCAPE = /[\x00-\x1f"\\]/;
 
 function serializeString(val: unknown): string {
   const str = val as string;
-  // Fast path: most strings don't need escaping
   if (!NEEDS_ESCAPE.test(str)) {
     return '"' + str + '"';
   }
@@ -45,6 +42,14 @@ function serializeString(val: unknown): string {
   }
   result += str.slice(last) + '"';
   return result;
+}
+
+function serializeNumber(val: unknown): string {
+  return "" + (val as number);
+}
+
+function serializeBoolean(val: unknown): string {
+  return (val as boolean) ? "true" : "false";
 }
 
 export function compile(schema: Schema): Serializer {
@@ -65,18 +70,10 @@ function buildSerializer(schema: Schema): Serializer {
     case "array":
       return buildArraySerializer(schema);
     case "object":
-      return buildObjectSerializer(schema);
+      return buildObjectSerializerCodegen(schema);
     default:
       return (val: unknown) => JSON.stringify(val);
   }
-}
-
-function serializeNumber(val: unknown): string {
-  return "" + (val as number);
-}
-
-function serializeBoolean(val: unknown): string {
-  return (val as boolean) ? "true" : "false";
 }
 
 function buildArraySerializer(schema: Schema): Serializer {
@@ -94,35 +91,41 @@ function buildArraySerializer(schema: Schema): Serializer {
   };
 }
 
-function buildObjectSerializer(schema: Schema): Serializer {
+function buildObjectSerializerCodegen(schema: Schema): Serializer {
   const props = schema.properties ?? {};
   const keys = Object.keys(props);
 
-  // Pre-build serializers for each property
-  const propSerializers: Array<{ key: string; prefix: string; serializer: Serializer }> = [];
-  for (const key of keys) {
-    propSerializers.push({
-      key,
-      prefix: '"' + key + '":',
-      serializer: buildSerializer(props[key]),
-    });
+  if (keys.length === 0) {
+    return () => "{}";
   }
 
-  return (val: unknown) => {
-    const obj = val as Record<string, unknown>;
-    let result = "{";
-    let first = true;
+  // Build child serializers
+  const childSerializers: Serializer[] = [];
+  for (const key of keys) {
+    childSerializers.push(buildSerializer(props[key]));
+  }
 
-    for (let i = 0; i < propSerializers.length; i++) {
-      const { key, prefix, serializer } = propSerializers[i];
-      const value = obj[key];
-      if (value === undefined) continue;
+  // Generate code that inlines property access
+  const args = ["obj"];
+  const closureArgs = ["serializers"];
 
-      if (!first) result += ",";
-      result += prefix + serializer(value);
-      first = false;
-    }
+  let code = "var o = obj;\nvar r = '{';\nvar first = true;\nvar v;\n";
 
-    return result + "}";
-  };
+  for (let i = 0; i < keys.length; i++) {
+    const key = keys[i];
+    const jsonKey = JSON.stringify(key);
+    const prefix = jsonKey + ":";
+    const commaPrefix = "," + prefix;
+
+    code += `v = o[${jsonKey}];\n`;
+    code += `if (v !== undefined) {\n`;
+    code += `  if (first) { r += '${prefix}' + serializers[${i}](v); first = false; }\n`;
+    code += `  else { r += '${commaPrefix}' + serializers[${i}](v); }\n`;
+    code += `}\n`;
+  }
+
+  code += "return r + '}';\n";
+
+  const fn = new Function("serializers", "return function(obj) {\n" + code + "\n};")(childSerializers);
+  return fn;
 }
