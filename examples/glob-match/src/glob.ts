@@ -444,13 +444,40 @@ function buildMultiSuffixCheck(suffixes: string[]): (path: string) => boolean {
   if (suffixes.length === 2) {
     const c0 = makeCodes(suffixes[0]);
     const c1 = makeCodes(suffixes[1]);
+    const last0 = c0[c0.length - 1];
+    const last1 = c1[c1.length - 1];
+    if (last0 !== last1) {
+      // Different last chars: use as fast discriminator
+      return (path: string) => {
+        const last = path.charCodeAt(path.length - 1);
+        if (last === last0) return endsWithCodes(path, c0);
+        if (last === last1) return endsWithCodes(path, c1);
+        return false;
+      };
+    }
     return (path: string) => endsWithCodes(path, c0) || endsWithCodes(path, c1);
   }
   // General case: group by last char code for fast discrimination
-  const codes = suffixes.map(makeCodes);
+  const allCodes = suffixes.map(makeCodes);
+  // Check if all suffixes have unique last chars
+  const lastChars = allCodes.map(c => c[c.length - 1]);
+  const uniqueLastChars = new Set(lastChars);
+  if (uniqueLastChars.size === allCodes.length) {
+    // Build a Map for O(1) last-char dispatch
+    const byLast = new Map<number, Uint16Array>();
+    for (let i = 0; i < allCodes.length; i++) {
+      byLast.set(lastChars[i], allCodes[i]);
+    }
+    return (path: string) => {
+      const last = path.charCodeAt(path.length - 1);
+      const codes = byLast.get(last);
+      if (codes === undefined) return false;
+      return endsWithCodes(path, codes);
+    };
+  }
   return (path: string) => {
-    for (let i = 0; i < codes.length; i++) {
-      if (endsWithCodes(path, codes[i])) return true;
+    for (let i = 0; i < allCodes.length; i++) {
+      if (endsWithCodes(path, allCodes[i])) return true;
     }
     return false;
   };
