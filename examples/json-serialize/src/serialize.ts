@@ -79,7 +79,6 @@ function buildSerializer(schema: Schema): Serializer {
 function buildArraySerializer(schema: Schema): Serializer {
   const itemSerializer = schema.items ? buildSerializer(schema.items) : (v: unknown) => JSON.stringify(v);
 
-  // Generate a codegen array serializer
   const fn = new Function("ser", `return function(val) {
     var arr = val;
     var len = arr.length;
@@ -93,6 +92,21 @@ function buildArraySerializer(schema: Schema): Serializer {
   return fn;
 }
 
+// Returns either an inline expression or null if a function call is needed
+function getInlineExpr(schema: Schema, valueExpr: string): string | null {
+  switch (schema.type) {
+    case "integer":
+    case "number":
+      return `"" + ${valueExpr}`;
+    case "boolean":
+      return `(${valueExpr} ? "true" : "false")`;
+    case "null":
+      return `"null"`;
+    default:
+      return null;
+  }
+}
+
 function buildObjectSerializerCodegen(schema: Schema): Serializer {
   const props = schema.properties ?? {};
   const keys = Object.keys(props);
@@ -101,12 +115,19 @@ function buildObjectSerializerCodegen(schema: Schema): Serializer {
     return () => "{}";
   }
 
-  // Build child serializers and pass them as individual arguments
+  // Collect serializers needed (only for types that can't be inlined)
   const childSerializers: Serializer[] = [];
   const paramNames: string[] = [];
+  const serializerMap: Map<number, number> = new Map(); // key index -> serializer param index
+
   for (let i = 0; i < keys.length; i++) {
-    childSerializers.push(buildSerializer(props[keys[i]]));
-    paramNames.push("s" + i);
+    const inline = getInlineExpr(props[keys[i]], "v");
+    if (inline === null) {
+      const paramIdx = childSerializers.length;
+      childSerializers.push(buildSerializer(props[keys[i]]));
+      paramNames.push("s" + paramIdx);
+      serializerMap.set(i, paramIdx);
+    }
   }
 
   let code = "return function(obj) {\nvar r = '{';\nvar first = true;\nvar v;\n";
@@ -117,10 +138,13 @@ function buildObjectSerializerCodegen(schema: Schema): Serializer {
     const prefix = jsonKey + ":";
     const commaPrefix = "," + prefix;
 
+    const inline = getInlineExpr(props[key], "v");
+    const expr = inline !== null ? inline : `s${serializerMap.get(i)}(v)`;
+
     code += `v = obj[${jsonKey}];\n`;
     code += `if (v !== undefined) {\n`;
-    code += `  if (first) { r += '${prefix}' + s${i}(v); first = false; }\n`;
-    code += `  else { r += '${commaPrefix}' + s${i}(v); }\n`;
+    code += `  if (first) { r += '${prefix}' + ${expr}; first = false; }\n`;
+    code += `  else { r += '${commaPrefix}' + ${expr}; }\n`;
     code += `}\n`;
   }
 
