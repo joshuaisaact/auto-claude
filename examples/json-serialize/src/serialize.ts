@@ -157,7 +157,7 @@ function getInlineExpr(schema: Schema, valueExpr: string): string | null {
   switch (schema.type) {
     case "integer":
     case "number":
-      return `"" + ${valueExpr}`;
+      return valueExpr;
     case "boolean":
       return `(${valueExpr} ? "true" : "false")`;
     case "null":
