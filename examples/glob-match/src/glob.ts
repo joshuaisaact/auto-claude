@@ -85,14 +85,10 @@ export function isMatch(path: string, pattern: string): boolean {
 
 // Check if any segment of a path starts with a dot
 function hasHiddenSegment(path: string): boolean {
-  if (path.charCodeAt(0) === 46) return true; // starts with '.'
-  const len = path.length;
-  for (let i = 0; i < len; i++) {
-    if (path.charCodeAt(i) === 47 && i + 1 < len && path.charCodeAt(i + 1) === 46) {
-      return true; // segment after '/' starts with '.'
-    }
-  }
-  return false;
+  // Check first char
+  if (path.charCodeAt(0) === 46) return true;
+  // Look for /. pattern — use indexOf which is native and fast
+  return path.indexOf("/.") !== -1;
 }
 
 // Check if path segment (from start to end exclusive) starts with dot
