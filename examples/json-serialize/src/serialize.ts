@@ -44,11 +44,9 @@ function serializeString(val: unknown): string {
   return result;
 }
 
-// escapeString returns the escaped string WITHOUT quotes
+// escapeString returns the escaped string WITHOUT quotes.
+// Called only when we already know escaping is needed (regex tested in codegen).
 function escapeString(str: string): string {
-  if (!NEEDS_ESCAPE.test(str)) {
-    return str;
-  }
   let result = '';
   let last = 0;
   for (let i = 0; i < str.length; i++) {
