@@ -44,6 +44,24 @@ function serializeString(val: unknown): string {
   return result;
 }
 
+// escapeString returns the escaped string WITHOUT quotes
+function escapeString(str: string): string {
+  if (!NEEDS_ESCAPE.test(str)) {
+    return str;
+  }
+  let result = '';
+  let last = 0;
+  for (let i = 0; i < str.length; i++) {
+    const code = str.charCodeAt(i);
+    const escape = code < 128 ? ESCAPE_TABLE[code] : undefined;
+    if (escape !== undefined) {
+      result += str.slice(last, i) + escape;
+      last = i + 1;
+    }
+  }
+  return result + str.slice(last);
+}
+
 function serializeNumber(val: unknown): string {
   return "" + (val as number);
 }
@@ -118,15 +136,35 @@ function buildObjectSerializerCodegen(schema: Schema): Serializer {
   // Collect serializers needed (only for types that can't be inlined)
   const childSerializers: Serializer[] = [];
   const paramNames: string[] = [];
-  const serializerMap: Map<number, number> = new Map(); // key index -> serializer param index
+  const serializerMap: Map<number, number> = new Map();
+
+  // Add escapeString for string properties (quote-less escape)
+  let hasStringProp = false;
+  for (let i = 0; i < keys.length; i++) {
+    if (props[keys[i]].type === "string") { hasStringProp = true; break; }
+  }
+  let escIdx = -1;
+  let reIdx = -1;
+  if (hasStringProp) {
+    escIdx = childSerializers.length;
+    paramNames.push("$$esc");
+    childSerializers.push(escapeString as unknown as Serializer);
+    reIdx = childSerializers.length;
+    paramNames.push("$$re");
+    childSerializers.push(NEEDS_ESCAPE as unknown as Serializer);
+  }
 
   for (let i = 0; i < keys.length; i++) {
-    const inline = getInlineExpr(props[keys[i]], "v");
-    if (inline === null) {
-      const paramIdx = childSerializers.length;
-      childSerializers.push(buildSerializer(props[keys[i]]));
-      paramNames.push("s" + paramIdx);
-      serializerMap.set(i, paramIdx);
+    const t = props[keys[i]].type;
+    // String, array, and object types that aren't inlined need a serializer
+    if (t !== "string") {
+      const inline = getInlineExpr(props[keys[i]], "v");
+      if (inline === null) {
+        const paramIdx = childSerializers.length;
+        childSerializers.push(buildSerializer(props[keys[i]]));
+        paramNames.push("s" + paramIdx);
+        serializerMap.set(i, paramIdx);
+      }
     }
   }
 
@@ -135,11 +173,25 @@ function buildObjectSerializerCodegen(schema: Schema): Serializer {
   for (let i = 0; i < keys.length; i++) {
     const key = keys[i];
     const jsonKey = JSON.stringify(key);
-    const prefix = jsonKey + ":";
-    const commaPrefix = "," + prefix;
+    const isString = props[key].type === "string";
 
-    const inline = getInlineExpr(props[key], "v");
-    const expr = inline !== null ? inline : `s${serializerMap.get(i)}(v)`;
+    // For string properties, merge the key prefix with the opening quote of the value
+    // So instead of '"key":' + '"value"', we get '"key":"' + value + '"'
+    let prefix: string;
+    let commaPrefix: string;
+    let expr: string;
+
+    if (isString) {
+      prefix = jsonKey + ':"';
+      commaPrefix = "," + jsonKey + ':"';
+      // Inline: if no escape needed, use raw string; else escape
+      expr = `($$re.test(v) ? $$esc(v) : v) + '"'`;
+    } else {
+      prefix = jsonKey + ":";
+      commaPrefix = "," + prefix;
+      const inline = getInlineExpr(props[key], "v");
+      expr = inline !== null ? inline : `s${serializerMap.get(i)}(v)`;
+    }
 
     code += `v = obj[${jsonKey}];\n`;
     code += `if (v !== undefined) {\n`;
