@@ -52,6 +52,23 @@ See `templates/program.md.template` for the skeleton. See `examples/` for concre
 - **[JSON serialization](examples/json-serialize/)** -- Agent optimized a schema-based serializer with codegen, escape lookup tables, and allocation-free regex scanning. 53% faster than native `JSON.stringify`, 8% faster than fast-json-stringify on real GitHub/JSONPlaceholder API data.
 - **[Perf optimization with hardware counters](examples/perf-optimization.md)** -- Template for optimizing hot paths using `perf stat`.
 
+## Install as a Claude Code skill
+
+Clone the repo and symlink it into your Claude Code skills directory:
+
+```bash
+git clone https://github.com/joshuaisaact/auto-claude.git
+ln -s "$(pwd)/auto-claude" ~/.claude/skills/autoresearch
+```
+
+Then in any project, use `/autoresearch` to set up an experiment. Claude will walk you through picking a target, metric, and constraints, then start the loop.
+
+Or use it without installing — just copy `templates/program.md.template` into your project, fill it in, and run:
+
+```
+claude "read program.md and start experimenting"
+```
+
 ## Design choices
 
 - **Single metric.** The agent needs one number to optimize. If you have multiple metrics, define a composite or pick the most important one.
