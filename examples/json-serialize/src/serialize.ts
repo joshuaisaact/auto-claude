@@ -24,40 +24,33 @@ ESCAPE_TABLE[34] = '\\"';
 ESCAPE_TABLE[92] = "\\\\";
 
 const NEEDS_ESCAPE = /[\x00-\x1f"\\]/;
+const ESCAPE_RE_G = /[\x00-\x1f"\\]/g;
 
 function serializeString(val: unknown): string {
   const str = val as string;
   if (!NEEDS_ESCAPE.test(str)) {
     return '"' + str + '"';
   }
-  let result = '"';
-  let last = 0;
-  for (let i = 0; i < str.length; i++) {
-    const code = str.charCodeAt(i);
-    const escape = code < 128 ? ESCAPE_TABLE[code] : undefined;
-    if (escape !== undefined) {
-      result += str.slice(last, i) + escape;
-      last = i + 1;
-    }
-  }
-  result += str.slice(last) + '"';
-  return result;
+  return '"' + escapeString(str) + '"';
 }
 
 // escapeString returns the escaped string WITHOUT quotes.
-// Called only when we already know escaping is needed (regex tested in codegen).
+// Uses regex.exec() to jump between escape positions (native C++ scan).
 function escapeString(str: string): string {
+  const re = ESCAPE_RE_G;
+  re.lastIndex = 0;
   let result = '';
   let last = 0;
-  for (let i = 0; i < str.length; i++) {
-    const code = str.charCodeAt(i);
-    const escape = code < 128 ? ESCAPE_TABLE[code] : undefined;
-    if (escape !== undefined) {
-      result += str.slice(last, i) + escape;
-      last = i + 1;
-    }
+  let match;
+  while ((match = re.exec(str)) !== null) {
+    const idx = match.index;
+    if (idx > last) result += str.slice(last, idx);
+    result += ESCAPE_TABLE[str.charCodeAt(idx)];
+    last = idx + 1;
   }
-  return result + str.slice(last);
+  if (last === 0) return str;
+  if (last < str.length) result += str.slice(last);
+  return result;
 }
 
 function serializeNumber(val: unknown): string {
